@@ -1,0 +1,93 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Sync core/ → public openremap repo
+#
+# Triggers automatically whenever a push to `main` touches anything inside
+# core/.  Also supports manual runs via workflow_dispatch.
+#
+# Required setup (one-time, in this private repo's Settings → Secrets and vars):
+#
+#   Secrets:
+#     PUBLIC_REPO_TOKEN  — a GitHub Personal Access Token (classic) with
+#                          repo scope on the PUBLIC repository. Or use a
+#                          fine-grained PAT with "Contents: Read and write"
+#                          on the target repo only.
+#
+#   Variables (Settings → Variables → Actions):
+#     PUBLIC_REPO        — owner/repo of the public repo, e.g. "acme/openremap"
+#
+# How it works:
+#   `git subtree split` extracts the full commit history of the core/ folder
+#   into a standalone branch, then pushes that branch to the public repo's
+#   main branch.  The public repo receives real commits — not a squashed copy —
+#   so contributors see meaningful history.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Sync core → public repo
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "core/**"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force-push even if core/ was not changed"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  sync:
+    name: Mirror core/ to public openremap repo
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout with full history ────────────────────────────────────────
+      # subtree split needs every commit to reconstruct the core/ sub-history.
+      - name: Checkout private repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Git identity ───────────────────────────────────────────────────────
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # ── 3. Split core/ into a temporary branch ───────────────────────────────
+      # This produces a branch whose entire history is ONLY the commits that
+      # touched the core/ prefix, rewritten so core/ becomes the root.
+      - name: Split core/ sub-tree
+        run: |
+          git subtree split --prefix=core --branch _core-mirror
+          echo "Split complete. Tip commit:"
+          git log -1 --oneline _core-mirror
+
+      # ── 4. Push to the public repo ───────────────────────────────────────────
+      - name: Push to public repo
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          PUBLIC_REPO: ${{ vars.PUBLIC_REPO }}
+        run: |
+          if [ -z "$PUBLIC_REPO" ]; then
+            echo "::error::Variable PUBLIC_REPO is not set. " \
+                 "Go to Settings → Variables → Actions and add PUBLIC_REPO."
+            exit 1
+          fi
+
+          PUBLIC_URL="https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/${PUBLIC_REPO}.git"
+          git remote add public "$PUBLIC_URL"
+
+          echo "Pushing to https://github.com/${PUBLIC_REPO} …"
+          git push public _core-mirror:master --force
+
+          echo "✅ Public repo synced: https://github.com/${PUBLIC_REPO}"
+
+      # ── 5. Cleanup ───────────────────────────────────────────────────────────
+      - name: Delete temporary branch
+        if: always()
+        run: |
+          git branch -D _core-mirror 2>/dev/null || true

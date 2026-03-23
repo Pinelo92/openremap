@@ -1,19 +1,35 @@
-# Python-generated files
+# ── Python generated ─────────────────────────────────────────────────────────
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+.pytest_cache/
 
-# Virtual environments
-.venv
+# ── Virtual environment ───────────────────────────────────────────────────────
+.venv/
 
-# Environment variables - never commit secrets
+# ── Environment variables — never commit secrets ──────────────────────────────
 .env
 .env.*
-!.env.example
+!server/.env.example
 
-# Logs
+# ── Logs ─────────────────────────────────────────────────────────────────────
 logs/
 *.log
+
+# ── ECU binary files — never commit real ECU binaries ────────────────────────
+*.bin
+*.ori
+*.BIN
+*.ORI
+
+# Allow the public sample binary used for testing
+!core/public/original.bin
+
+# ── Legacy code (reference only, not part of any package) ────────────────────
+src/legacy/
+
+# ── Personal notes and to-do lists ───────────────────────────────────────────
+todo/
