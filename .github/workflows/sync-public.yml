@@ -72,14 +72,29 @@ jobs:
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           PUBLIC_REPO: ${{ vars.PUBLIC_REPO }}
         run: |
+          # ── Validate inputs ──────────────────────────────────────────────────
           if [ -z "$PUBLIC_REPO" ]; then
             echo "::error::Variable PUBLIC_REPO is not set. " \
                  "Go to Settings → Variables → Actions and add PUBLIC_REPO."
             exit 1
           fi
 
-          PUBLIC_URL="https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/${PUBLIC_REPO}.git"
-          git remote add public "$PUBLIC_URL"
+          if [ -z "$PUBLIC_REPO_TOKEN" ]; then
+            echo "::error::Secret PUBLIC_REPO_TOKEN is empty or not set. " \
+                 "Go to Settings → Secrets → Actions and add PUBLIC_REPO_TOKEN."
+            exit 1
+          fi
+
+          echo "PUBLIC_REPO  : ${PUBLIC_REPO}"
+          echo "Token length : ${#PUBLIC_REPO_TOKEN} chars"
+
+          # ── Configure git credentials ────────────────────────────────────────
+          # Store credentials so git does not fall back to the Actions bot token.
+          git config credential.helper store
+          echo "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com" \
+            >> "${HOME}/.git-credentials"
+
+          git remote add public "https://github.com/${PUBLIC_REPO}.git"
 
           echo "Pushing to https://github.com/${PUBLIC_REPO} …"
           git push public _core-mirror:main --force
