@@ -17,15 +17,15 @@ Private development workspace. Contains two packages:
 │   ├── src/openremap/
 │   │   ├── tuning/           engine: identifier, extractor registry, recipe builder, patcher, validators
 │   │   └── cli/              typer CLI (openremap identify / cook / validate / patch / scan)
-│   ├── tests/                677 tests, all tuning-engine coverage
+│   ├── tests/                677 tests, all tuning-engine coverage — synthetic data only, no real binaries
 │   ├── docs/
-│   ├── public/               sample binary for tests
 │   └── pyproject.toml        deps: typer, rarfile only
 │
 ├── server/                   stays here — never pushed to any public repo
 │   ├── src/api/              FastAPI routers, core infra, background tasks
 │   ├── main.py
 │   ├── .env.example
+│   ├── samples/              private sample binaries and recipes (never committed to git)
 │   └── pyproject.toml        deps: fastapi, motor, redis, uvicorn + openremap (workspace)
 │
 ├── .github/workflows/

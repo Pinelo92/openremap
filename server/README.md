@@ -44,6 +44,8 @@ uv run uvicorn server.main:app --reload --port 8000
 
 Swagger UI → `http://localhost:8000/docs`
 
+Full API reference → [`docs/api.md`](docs/api.md)
+
 ---
 
 ## Architecture

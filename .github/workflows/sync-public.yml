@@ -82,7 +82,7 @@ jobs:
           git remote add public "$PUBLIC_URL"
 
           echo "Pushing to https://github.com/${PUBLIC_REPO} …"
-          git push public _core-mirror:master --force
+          git push public _core-mirror:main --force
 
           echo "✅ Public repo synced: https://github.com/${PUBLIC_REPO}"
 

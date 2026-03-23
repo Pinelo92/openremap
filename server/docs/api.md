@@ -391,7 +391,7 @@ These limits apply to all endpoints that accept file uploads.
 
 ## Rate Limits
 
-Default limits are applied globally. These can be adjusted in `src/api/core/limiter.py`.
+Default limits are applied globally.
 
 | Scope | Limit |
 |---|---|

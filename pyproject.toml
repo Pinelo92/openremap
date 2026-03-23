@@ -4,6 +4,9 @@ members = ["core", "server"]
 [tool.uv]
 package = false
 
+[tool.pyright]
+extraPaths = ["core/src", "server/src"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",

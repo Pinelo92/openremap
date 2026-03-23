@@ -25,8 +25,9 @@ logs/
 *.BIN
 *.ORI
 
-# Allow the public sample binary used for testing
-!core/public/original.bin
+# Private sample binaries — never commit real ECU binaries
+server/samples/
+testing/
 
 # ── Legacy code (reference only, not part of any package) ────────────────────
 src/legacy/
