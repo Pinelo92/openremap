@@ -10,11 +10,25 @@ package = true
 
 [project]
 name = "openremap"
-version = "0.1.0"
+version = "0.2.0"
 description = "ECU binary analysis and patching toolkit — diff, validate, and apply tuning recipes to automotive ECU binaries."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.14"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Environment :: Console",
+    "Natural Language :: English",
+]
 dependencies = [
     "typer>=0.15.0",
     "rarfile>=4.2",
@@ -24,8 +38,10 @@ dependencies = [
 openremap = "openremap.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/gbelectronics/openremap"
-Repository = "https://github.com/gbelectronics/openremap"
+Homepage = "https://github.com/Pinelo92/openremap"
+Repository = "https://github.com/Pinelo92/openremap"
+"Bug Tracker" = "https://github.com/Pinelo92/openremap/issues"
+Changelog = "https://github.com/Pinelo92/openremap/releases"
 
 [dependency-groups]
 dev = [

@@ -90,12 +90,12 @@ firmware silently.
 **What `openremap` does NOT do:**
 
 - It does not calculate or correct ECU checksums
-- `openremap validate patched` confirms that recipe bytes were written correctly
+- `openremap validate tuned` confirms that recipe bytes were written correctly
   — it does not verify that the resulting binary is a valid, flashable image
 
 **What you must do before flashing:**
 
-1. Open the patched binary in a professional-grade tool — **WinOLS**, **ECM Titanium**,
+1. Open the tuned binary in a professional-grade tool — **WinOLS**, **ECM Titanium**,
    **Alientech KESS**, or an equivalent
 2. Run the tool's checksum correction function for the specific ECU family
 3. Confirm the binary passes integrity validation before touching any vehicle

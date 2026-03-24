@@ -1,15 +1,15 @@
 """
-openremap validate strict  <target> <recipe>
-openremap validate exists  <target> <recipe>
-openremap validate patched <patched> <recipe>
+openremap validate strict <target> <recipe>
+openremap validate exists <target> <recipe>
+openremap validate tuned  <tuned>  <recipe>
 
-Validate ECU binaries against a recipe before or after patching.
+Validate ECU binaries against a recipe before or after tuning.
 
 Examples:
-    openremap validate strict  target.bin recipe.json
-    openremap validate exists  target.bin recipe.json
-    openremap validate patched patched.bin recipe.json
-    openremap validate strict  target.bin recipe.json --json
+    openremap validate strict target.bin recipe.json
+    openremap validate exists target.bin recipe.json
+    openremap validate tuned  target_tuned.bin recipe.json
+    openremap validate strict target.bin recipe.json --json
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ from openremap.tuning.services.validate_strict import ECUStrictValidator
 app = typer.Typer(
     help=(
         "Validate a binary against a recipe.\n\n"
-        "  strict   — verify ob bytes are at every recorded offset (run before patching)\n"
-        "  exists   — search the entire binary for ob bytes (diagnose a strict failure)\n"
-        "  patched  — confirm mb bytes were written correctly (run after patching)"
+        "  strict  — verify ob bytes are at every recorded offset (run before tuning)\n"
+        "  exists  — search the entire binary for ob bytes (diagnose a strict failure)\n"
+        "  tuned   — confirm mb bytes were written correctly (run after tuning)"
     ),
     no_args_is_help=True,
 )
@@ -198,8 +198,8 @@ def strict(
     bytes (ob) against what is actually present in the binary. All instructions
     are checked before reporting.
 
-    Run this before applying a patch. A result of safe_to_patch=true means
-    every instruction matched and it is safe to call 'patch apply'.
+    Run this before tuning. A result of safe_to_patch=true means every
+    instruction matched and it is safe to call 'openremap tune'.
     """
     target_data = _read_bin(target, "Target")
     recipe_dict = _read_recipe(recipe)
@@ -448,21 +448,21 @@ def exists(
 
 
 # ---------------------------------------------------------------------------
-# patched
+# tuned
 # ---------------------------------------------------------------------------
 
 
-@app.command()
-def patched(
+@app.command(name="tuned")
+def tuned(
     patched_file: Path = typer.Argument(
         ...,
-        help="The patched ECU binary to verify (.bin or .ori).",
+        help="The tuned ECU binary to verify (.bin or .ori).",
         exists=True,
         file_okay=True,
         dir_okay=False,
         readable=True,
         resolve_path=True,
-        metavar="PATCHED",
+        metavar="TUNED",
     ),
     recipe: Path = typer.Argument(
         ...,
@@ -487,21 +487,21 @@ def patched(
     ),
 ) -> None:
     """
-    Post-patch verification — confirm mb bytes were written correctly.
+    Post-tune verification — confirm mb bytes were written correctly.
 
-    Reads the exact offset of every instruction in a patched binary and
+    Reads the exact offset of every instruction in a tuned binary and
     confirms that the modified bytes (mb) are now present there.
 
     This is the mirror image of 'validate strict': strict checks ob bytes
-    before patching; this command checks mb bytes after patching.
+    before tuning; this command checks mb bytes after tuning.
 
     Returns patch_confirmed=true only when every instruction passes.
     """
-    patched_data = _read_bin(patched_file, "Patched")
+    patched_data = _read_bin(patched_file, "Tuned")
     recipe_dict = _read_recipe(recipe)
 
     typer.echo(
-        f"\n  Verifying "
+        f"\n  Verifying tuned binary "
         f"{typer.style(patched_file.name, fg=typer.colors.CYAN)} "
         f"against "
         f"{typer.style(recipe.name, fg=typer.colors.CYAN)} …"
@@ -521,7 +521,7 @@ def patched(
     except Exception as exc:
         typer.echo(
             typer.style(
-                f"\n  Error: post-patch verification failed — {exc}",
+                f"\n  Error: post-tune verification failed — {exc}",
                 fg=typer.colors.RED,
                 bold=True,
             ),
@@ -546,7 +546,7 @@ def patched(
     if confirmed:
         typer.echo(
             typer.style(
-                "  ✅ Patch confirmed — all mb bytes verified",
+                "  ✅ Tune confirmed — all mb bytes verified",
                 fg=typer.colors.GREEN,
                 bold=True,
             )
@@ -554,7 +554,7 @@ def patched(
     else:
         typer.echo(
             typer.style(
-                "  ❌ Patch NOT confirmed — some instructions failed",
+                "  ❌ Tune NOT confirmed — some instructions failed",
                 fg=typer.colors.RED,
                 bold=True,
             )
@@ -562,7 +562,7 @@ def patched(
 
     col = 20
     typer.echo("")
-    typer.echo(f"  {'Patched File':<{col}} {report['patched_file']}")
+    typer.echo(f"  {'Tuned File':<{col}} {report['patched_file']}")
     typer.echo(f"  {'MD5':<{col}} {report['patched_md5']}")
     typer.echo(f"  {'Instructions':<{col}} {total:,}")
     typer.echo(
