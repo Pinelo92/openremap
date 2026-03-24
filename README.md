@@ -122,4 +122,4 @@ The public repo will receive the full, real commit history of `core/` — not a 
 openremap = { workspace = true }
 ```
 
-When deploying to production, publish `openremap` to PyPI (or a private index) and remove that block.
+`openremap` is published on [PyPI](https://pypi.org/project/openremap/). When deploying to production, remove the `[tool.uv.sources]` block and let uv resolve the package from PyPI directly.

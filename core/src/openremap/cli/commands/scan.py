@@ -12,18 +12,23 @@ sorts each file into one of five destination sub-folders:
   unknown    — no extractor could handle the file
   trash      — file does not have a .bin or .ori extension
 
-Useful for contributors testing a new extractor against a batch of real binaries.
+Running without any flags performs a safe dry-run preview — nothing is moved.
+Pass --move to actually sort files. Pass --organize to sort into
+manufacturer/family sub-folders (e.g. scanned/Bosch/EDC17/) and create all
+required directories automatically.
 
 Examples:
-    openremap scan
-    openremap scan ./my_bins/
-    openremap scan ./my_bins/ --dry-run
-    openremap scan ./my_bins/ --create-dirs
-    openremap scan ./my_bins/ --dry-run --create-dirs
+    openremap scan                              # dry-run in current directory
+    openremap scan ./my_bins/                   # dry-run in a specific directory
+    openremap scan ./my_bins/ --move            # sort files (flat folders must exist)
+    openremap scan ./my_bins/ --move --create-dirs  # sort, creating flat folders first
+    openremap scan ./my_bins/ --move --organize     # sort into manufacturer/family tree
+    openremap scan ./my_bins/ --organize            # preview the organized layout
 """
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Annotated, Optional
@@ -46,6 +51,10 @@ DEST_UNKNOWN = "unknown"
 DEST_TRASH = "trash"
 
 ALL_DEST = [DEST_SCANNED, DEST_SW_MISSING, DEST_CONTESTED, DEST_UNKNOWN, DEST_TRASH]
+
+# Only these destinations have a single confirmed extractor to derive
+# manufacturer/family from — all others stay flat under --organize.
+ORGANIZABLE_DEST = {DEST_SCANNED, DEST_SW_MISSING}
 
 # ---------------------------------------------------------------------------
 # Result class
@@ -180,6 +189,74 @@ def classify_file(data: bytes, filename: str) -> ScanResult:
     )
 
 
+# ---------------------------------------------------------------------------
+# Folder name sanitiser
+# ---------------------------------------------------------------------------
+
+
+def _safe_folder_name(name: str) -> str:
+    """
+    Sanitize a string so it can be used safely as a directory name.
+
+    Removes characters that are illegal on Windows (\\/:*?"<>|) or that could
+    cause confusion on any OS. Collapses redundant underscores/spaces and
+    strips leading/trailing junk. Falls back to "unknown" if the result is
+    empty after sanitisation.
+
+    Args:
+        name: Raw string to sanitise (e.g. a manufacturer or family name).
+
+    Returns:
+        A safe, non-empty directory name.
+    """
+    # Replace Windows-illegal characters and path separators
+    name = re.sub(r'[\\/:*?"<>|]', "_", name)
+    # Collapse consecutive underscores or spaces
+    name = re.sub(r"[_\s]{2,}", "_", name).strip("_. ")
+    return name or "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Organised destination resolver
+# ---------------------------------------------------------------------------
+
+
+def _organized_dest_dir(base_dest: Path, result: ScanResult) -> Path:
+    """
+    Compute the final destination directory for a file under --organize mode.
+
+    Only SCANNED and SW_MISSING results get manufacturer/family nesting because
+    those are the only outcomes where a single extractor was positively
+    identified. All other destinations (contested, unknown, trash) remain flat
+    — there is no single unambiguous extractor to derive from.
+
+    The directory is NOT created here; the caller is responsible for calling
+    mkdir(parents=True, exist_ok=True) before moving the file.
+
+    Args:
+        base_dest: Flat destination directory (e.g. directory/scanned/).
+        result:    The ScanResult from classify_file().
+
+    Returns:
+        Path to the final destination directory.
+        Example: directory/scanned/Bosch/EDC17/
+    """
+    if result.destination not in ORGANIZABLE_DEST:
+        return base_dest
+
+    extraction = result.extraction or {}
+    manufacturer = _safe_folder_name(
+        extraction.get("manufacturer") or "unknown_manufacturer"
+    )
+    family = _safe_folder_name(extraction.get("ecu_family") or "unknown_family")
+    return base_dest / manufacturer / family
+
+
+# ---------------------------------------------------------------------------
+# Safe file move
+# ---------------------------------------------------------------------------
+
+
 def safe_move(src: Path, dest_dir: Path) -> Path:
     """
     Move src into dest_dir, avoiding collisions by appending a counter
@@ -221,27 +298,47 @@ def scan(
     dry_run: Annotated[
         bool,
         typer.Option(
-            "--dry-run",
-            "-n",
+            "--dry-run/--move",
             help=(
-                "Classify every file and print the results without moving anything. "
-                "Useful for previewing what the scan would do."
+                "Preview mode (default): classify every file and print results "
+                "without moving anything. Destination folders are not required. "
+                "Pass --move to actually sort files into the destination folders."
             ),
         ),
-    ] = False,
+    ] = True,
     create_dirs: Annotated[
         bool,
         typer.Option(
             "--create-dirs",
             help=(
-                "Automatically create the five destination sub-folders inside the "
-                "scan directory if they do not already exist."
+                "Automatically create the five flat destination sub-folders inside "
+                "the scan directory if they do not already exist. "
+                "Implied automatically by --organize."
+            ),
+        ),
+    ] = False,
+    organize: Annotated[
+        bool,
+        typer.Option(
+            "--organize",
+            "-O",
+            help=(
+                "Sort identified files into manufacturer/family sub-folders "
+                "(e.g. scanned/Bosch/EDC17/). "
+                "Automatically creates all required directories — no need to pass "
+                "--create-dirs separately. "
+                "Applies to SCANNED and SW MISSING outcomes only; "
+                "contested, unknown, and trash remain in flat folders."
             ),
         ),
     ] = False,
 ) -> None:
     """
     Batch-scan a directory of ECU binaries through all registered extractors.
+
+    Running without flags performs a safe dry-run — files are classified and
+    results are printed but nothing is moved. Pass --move when you are ready
+    to actually sort files.
 
     Each file is classified and optionally moved into one of five sub-folders
     inside the scan directory:
@@ -253,7 +350,9 @@ def scan(
       unknown    — no extractor matched
       trash      — not a .bin or .ori file
 
-    Run with --dry-run first to preview results without moving any files.
+    Use --organize to further sort scanned and sw_missing files into
+    manufacturer/family sub-folders (e.g. scanned/Bosch/EDC17/).
+    --organize creates all required directories automatically.
     """
     if not directory.is_dir():
         typer.echo(
@@ -266,21 +365,26 @@ def scan(
         )
         raise typer.Exit(code=1)
 
+    # --organize implies --create-dirs for the flat top-level folders.
+    effective_create_dirs = create_dirs or organize
+
     dest = {name: directory / name for name in ALL_DEST}
 
-    # --- Create destination folders if requested ---
-    if create_dirs:
+    # --- Create flat destination folders if requested ---
+    if effective_create_dirs:
         for path in dest.values():
             path.mkdir(exist_ok=True)
 
-    # --- Validate destination folders exist (skip for dry run — nothing gets moved) ---
-    if not dry_run:
+    # --- Validate flat destination folders exist (only when moving without organize) ---
+    # With --organize the flat dirs are always created above, so no extra check needed.
+    if not dry_run and not organize:
         missing_dirs = [name for name in ALL_DEST if not dest[name].is_dir()]
         if missing_dirs:
             typer.echo(
                 typer.style(
                     f"\n  Error: missing destination folders: {', '.join(missing_dirs)}\n"
-                    f"  Run with --create-dirs to create them automatically.",
+                    f"  Run with --create-dirs to create them, or use --organize to\n"
+                    f"  create the full manufacturer/family folder tree automatically.",
                     fg=typer.colors.RED,
                     bold=True,
                 ),
@@ -307,10 +411,14 @@ def scan(
     typer.echo(
         typer.style("  OpenRemap — Batch ECU Scanner", bold=True)
         + (
-            typer.style("  [dry run — no files will be moved]", fg=typer.colors.YELLOW)
+            typer.style(
+                "  [dry run — pass --move to sort files]",
+                fg=typer.colors.YELLOW,
+            )
             if dry_run
             else ""
         )
+        + (typer.style("  [organized]", fg=typer.colors.CYAN) if organize else "")
     )
     typer.echo(
         typer.style(
@@ -337,8 +445,9 @@ def scan(
 
         # --- Wrong extension → trash ---
         if ext not in VALID_EXTENSIONS:
+            actual_dest = dest[DEST_TRASH]
             if not dry_run:
-                safe_move(filepath, dest[DEST_TRASH])
+                safe_move(filepath, actual_dest)
             counts[DEST_TRASH] += 1
             tag = typer.style("  TRASH      ", fg=typer.colors.RED)
             typer.echo(f"{label_idx}{tag}{filepath.name}")
@@ -360,9 +469,19 @@ def scan(
         result = classify_file(data, filepath.name)
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
+        # --- Resolve actual destination directory ---
+        if organize:
+            actual_dest = _organized_dest_dir(dest[result.destination], result)
+        else:
+            actual_dest = dest[result.destination]
+
         # --- Move (unless dry run) ---
         if not dry_run:
-            safe_move(filepath, dest[result.destination])
+            if organize:
+                # Nested dirs are created on-demand so we never pre-create
+                # the full tree — only the dirs we actually need are made.
+                actual_dest.mkdir(parents=True, exist_ok=True)
+            safe_move(filepath, actual_dest)
         counts[result.destination] += 1
 
         colour, label = dest_colours[result.destination]
@@ -370,9 +489,16 @@ def scan(
         timing = typer.style(f"  {elapsed_ms:6.1f} ms", dim=True)
 
         typer.echo(f"{label_idx}{tag}{filepath.name}{timing}")
+
+        # Build the detail line, appending the organized sub-path when relevant.
+        detail = result.detail
+        if organize and result.destination in ORGANIZABLE_DEST:
+            rel = actual_dest.relative_to(directory)
+            detail += typer.style(f"  → {rel}/", fg=typer.colors.CYAN)
+
         typer.echo(
             typer.style(
-                f"{'':>{idx_width + 2}}             └─ {result.detail}",
+                f"{'':>{idx_width + 2}}             └─ {detail}",
                 dim=True,
             )
         )
@@ -407,4 +533,19 @@ def scan(
         typer.style(f"\n  Total: {total}  •  {elapsed_total:.2f}s", dim=True)
         + dry_run_note
     )
+
+    # --- Contextual tip for dry-run ---
+    if dry_run:
+        if organize:
+            tip = (
+                "  Tip: run with --move --organize to sort files into the "
+                "manufacturer/family tree shown above."
+            )
+        else:
+            tip = (
+                "  Tip: run with --move to sort files into flat folders, or "
+                "add --organize to sort by manufacturer/family (e.g. scanned/Bosch/EDC17/)."
+            )
+        typer.echo(typer.style(f"\n{tip}", fg=typer.colors.CYAN))
+
     typer.echo("")

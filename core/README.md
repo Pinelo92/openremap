@@ -1,21 +1,44 @@
 # OpenRemap
 
 [![CI](https://github.com/Pinelo92/openremap/actions/workflows/ci.yml/badge.svg)](https://github.com/Pinelo92/openremap/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/openremap.svg)](https://pypi.org/project/openremap/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
 Extract what changed between a stock and a tuned ECU binary. Replay that change — safely — on any matching ECU.
 
-OpenRemap reads two binary files, finds every modified byte, and saves the difference as a portable **recipe**. That recipe can be validated against any target ECU before touching it, applied byte-by-byte with a full audit trail, and verified after the fact. No guessing, no blind flashing.
+Drop any `.bin` at it — manufacturer, ECU family, software version, match key, all back in under a second. Point it at a folder of hundreds of binaries — sorted into `Bosch/EDC17/`, `Siemens/SIM2K/` automatically, nothing moved until you say so. Diff a stock and a tuned binary and the difference becomes a portable **recipe** — validated against any target before touching it, applied byte-by-byte with a full audit trail, verified after the fact. No guessing, no blind flashing.
 
-Built for tuners who want to understand what they're writing to an ECU, and for developers who want an open, scriptable alternative to closed tuning toolchains.
+Built for tuners who want to understand what they're writing to an ECU, and for developers who want an open, scriptable alternative to closed tuning toolchains. → [How it works in detail](docs/about.md)
 
 ---
 
 ## Install
 
-Requires Python 3.14+ and [uv](https://github.com/astral-sh/uv).
+Now on PyPI — no git URL required. Requires [Python 3.14+](https://www.python.org/downloads/) and [uv](https://github.com/astral-sh/uv).
+Full setup guide → [`docs/setup.md`](docs/setup.md)
+
+### Regular use
+
+```bash
+uv tool install openremap
+```
+
+Installs `openremap` permanently on your system PATH. Works from any folder,
+no environment to activate, survives reboots. Verify with:
+
+```bash
+openremap --version
+```
+
+Prefer `pip`? That works too:
+
+```bash
+pip install openremap
+```
+
+### Contributing / development
 
 ```bash
 git clone https://github.com/Pinelo92/openremap.git
@@ -23,13 +46,33 @@ cd openremap
 uv sync
 ```
 
-`uv sync` installs all dependencies and registers the `openremap` command in your shell.
+After `uv sync` the command lives inside the virtual environment. Either
+prefix every call with `uv run`, or activate the environment first:
+
+```bash
+# Option A — prefix (no activation needed)
+uv run openremap identify ecu.bin
+
+# Option B — activate once per session, then use bare command
+source .venv/bin/activate          # macOS / Linux
+.venv\Scripts\activate             # Windows
+openremap identify ecu.bin
+```
 
 ---
 
 ## CLI Quickstart
 
+> **New here?** Run `openremap workflow` first — it prints a complete plain-English
+> guide with every step, the exact commands to type, and what to do when something
+> goes wrong. No reading required.
+
+Full CLI Guide → [`docs/cli.md`](docs/cli.md)
+
 ```bash
+# New users: print the full step-by-step workflow guide
+openremap workflow
+
 # Identify an ECU binary
 openremap identify ecu.bin
 
@@ -39,24 +82,25 @@ openremap cook stock.bin stage1.bin --output recipe.json
 # Validate the target before touching it
 openremap validate strict target.bin recipe.json
 
-# Apply the recipe
-openremap patch apply target.bin recipe.json --output patched.bin
+# Apply the tune
+openremap tune target.bin recipe.json --output target_tuned.bin
 
 # Confirm every byte landed correctly
-openremap validate patched patched.bin recipe.json
+openremap validate tuned target_tuned.bin recipe.json
 
-# Batch-scan a folder of binaries through all extractors
-openremap scan ./my_bins/ --dry-run
+# Batch-scan a folder of binaries — dry-run is the default, nothing moves
+openremap scan ./my_bins/
+
+# Sort files into a manufacturer/family tree once you're happy with the preview
+openremap scan ./my_bins/ --move --organize
 ```
 
 > 🔴 **CHECKSUM VERIFICATION IS MANDATORY**
-> Before flashing any patched binary to a vehicle, you **must** run it through a
+> Before flashing any tuned binary to a vehicle, you **must** run it through a
 > dedicated checksum correction tool (ECM Titanium, WinOLS, or equivalent).
-> `openremap validate patched` confirms the recipe was applied — it does **not**
+> `openremap validate tuned` confirms the recipe was applied — it does **not**
 > correct or validate ECU checksums. Flashing a binary with an incorrect checksum
 > **will brick your ECU.** No exceptions.
-
-Full CLI reference → [`docs/cli.md`](docs/cli.md)
 
 ---
 
@@ -90,7 +134,8 @@ All current extractors are Bosch. The registry is built to be extended to any ma
 
 | Document | Contents |
 |---|---|
-| [`docs/cli.md`](docs/cli.md) | Full CLI reference — every command, every flag, scan deep-dive |
+| [`docs/setup.md`](docs/setup.md) | Full install guide — regular use, development, shell completion, updating, troubleshooting |
+| [`docs/cli.md`](docs/cli.md) | Commands guide — what each command does, with links to full per-command pages |
 | [`docs/recipe-format.md`](docs/recipe-format.md) | The recipe JSON spec — fields, structure, versioning |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to add a new ECU extractor, code style, submitting a PR, contributor safety notice |
 | [`DISCLAIMER.md`](DISCLAIMER.md) | Liability, intended use, professional review requirements, legal notice |
