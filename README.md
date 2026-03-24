@@ -5,9 +5,58 @@
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
-> ⚠️ **Research and educational use only.** Any output produced by this software must be reviewed by a qualified professional before being flashed to a vehicle. The authors accept no liability for damage, loss, or legal consequences arising from its use. Read the full [DISCLAIMER](DISCLAIMER.md) before proceeding.
+Extract what changed between a stock and a tuned ECU binary. Replay that change — safely — on any matching ECU.
 
-Open-source ECU binary analysis and patching toolkit. Diff a stock and a tuned binary to produce a portable JSON **recipe**, then validate and apply that recipe to any compatible ECU — with strict pre- and post-patch verification at every step.
+OpenRemap reads two binary files, finds every modified byte, and saves the difference as a portable **recipe**. That recipe can be validated against any target ECU before touching it, applied byte-by-byte with a full audit trail, and verified after the fact. No guessing, no blind flashing.
+
+Built for tuners who want to understand what they're writing to an ECU, and for developers who want an open, scriptable alternative to closed tuning toolchains.
+
+---
+
+## Install
+
+Requires Python 3.14+ and [uv](https://github.com/astral-sh/uv).
+
+```bash
+git clone https://github.com/Pinelo92/openremap.git
+cd openremap
+uv sync
+```
+
+`uv sync` installs all dependencies and registers the `openremap` command in your shell.
+
+---
+
+## CLI Quickstart
+
+```bash
+# Identify an ECU binary
+openremap identify ecu.bin
+
+# Extract the tune — diff a stock and a modified binary into a recipe
+openremap cook stock.bin stage1.bin --output recipe.json
+
+# Validate the target before touching it
+openremap validate strict target.bin recipe.json
+
+# Apply the recipe
+openremap patch apply target.bin recipe.json --output patched.bin
+
+# Confirm every byte landed correctly
+openremap validate patched patched.bin recipe.json
+
+# Batch-scan a folder of binaries through all extractors
+openremap scan ./my_bins/ --dry-run
+```
+
+> 🔴 **CHECKSUM VERIFICATION IS MANDATORY**
+> Before flashing any patched binary to a vehicle, you **must** run it through a
+> dedicated checksum correction tool (ECM Titanium, WinOLS, or equivalent).
+> `openremap validate patched` confirms the recipe was applied — it does **not**
+> correct or validate ECU checksums. Flashing a binary with an incorrect checksum
+> **will brick your ECU.** No exceptions.
+
+Full CLI reference → [`docs/cli.md`](docs/cli.md)
 
 ---
 
@@ -33,50 +82,7 @@ All current extractors are Bosch. The registry is built to be extended to any ma
 
 ---
 
-## Install
-
-Requires Python 3.14+ and [uv](https://github.com/astral-sh/uv).
-
-```bash
-git clone https://github.com/Pinelo92/openremap.git
-cd openremap
-uv sync
-```
-
-`uv sync` installs all dependencies and registers the `openremap` command in your shell.
-
----
-
-## CLI Quickstart
-
-```bash
-# Identify an ECU binary
-openremap identify ecu.bin
-
-# Cook a recipe from a stock and a tuned binary
-openremap cook stock.bin stage1.bin --output recipe.json
-
-# Validate the target before patching
-openremap validate strict target.bin recipe.json
-
-# Apply the patch
-openremap patch apply target.bin recipe.json --output patched.bin
-
-# Verify the patch was written correctly
-openremap validate patched patched.bin recipe.json
-
-# Batch-scan a directory of binaries through all extractors
-openremap scan ./my_bins/ --dry-run
-```
-
-> 🔴 **CHECKSUM VERIFICATION IS MANDATORY**
-> Before flashing any patched binary to a vehicle, you **must** run it through a
-> dedicated checksum correction tool (ECM Titanium, WinOLS, or equivalent).
-> `openremap validate patched` confirms the recipe was applied — it does **not**
-> correct or validate ECU checksums. Flashing a binary with an incorrect checksum
-> **will brick your ECU.** No exceptions.
-
-Full CLI reference → [`docs/cli.md`](docs/cli.md)
+> ⚠️ **Research and educational use only.** Any output produced by this software must be reviewed by a qualified professional before being flashed to a vehicle. The authors accept no liability for damage, loss, or legal consequences arising from its use. Read the full [DISCLAIMER](DISCLAIMER.md) before proceeding.
 
 ---
 
