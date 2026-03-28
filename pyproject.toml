@@ -32,6 +32,7 @@ classifiers = [
 dependencies = [
     "typer>=0.15.0",
     "rarfile>=4.2",
+    "pydantic>=2",
 ]
 
 [project.scripts]
