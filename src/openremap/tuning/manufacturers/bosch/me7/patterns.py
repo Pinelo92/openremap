@@ -94,15 +94,23 @@ PATTERNS: Dict[str, bytes] = {
     # In ME731 (Alfa GT) bins the two numbers are separated by a space + null:
     #   "0261208571 \x001037368772"
     #
+    # In ME7.3 Italian variants (Ferrari 360, possibly Alfa Romeo/Maserati)
+    # the SW prefix is 1277 instead of 1037:
+    #   "0261204841 \x001277356302"
+    #
     # The separator group [\x00 ]? handles all three cases.
     # Capturing group 1 = HW (0261 + 6 digits)
-    # Capturing group 2 = SW (1037 + 6–10 digits)
-    "hw_sw_combined": rb"(0261\d{6})[\x00 ]?\x00?(1037\d{6,10})",
+    # Capturing group 2 = SW (1037 or 1277 + 6–10 digits)
+    # Note: 1277 prefix is used by ME7.3 Italian variants (Ferrari, possibly
+    # Alfa Romeo / Maserati).  e.g. HW 0261204841, SW 1277356302.
+    "hw_sw_combined": rb"(0261\d{6})[\x00 ]?\x00?((?:1037|1277)\d{6,10})",
     # Standalone SW version — fallback for the rare bins where HW and SW
     # are stored separately (e.g. "006410010A0.bin" where SW appears alone).
     # No lookbehind here because in the standalone case it is not preceded
     # by the HW number directly.
-    "software_version": rb"1037\d{6,10}",
+    # ME7.3 Italian variants (Ferrari 360, possibly Alfa Romeo/Maserati)
+    # use a 1277 prefix instead of 1037.
+    "software_version": rb"(?:1037|1277)\d{6,10}",
     # Calibration ID from the variant string — e.g. "6428.AA"  "4013.00"  "C1105N"
     # Extracted from the slash-delimited block: .../family/dataset/cal_id//...
     # This pattern matches the 5th field (after 4 slashes) of the variant string.
@@ -209,7 +217,11 @@ PATTERN_REGIONS: Dict[str, str] = {
 # Strategy:
 #   - "ME7." covers ME7.1, ME7.5, ME7.1.1, ME7.5.5, ME7.5.10 etc.
 #   - "ME71" covers the early ME71 variant (no dot notation)
-#   - "MOTRONIC" is ME7-exclusive within the Bosch range we handle
+#   - "MOTRONIC" is a broad Bosch Motronic label — present in ME7 bins but
+#     also in other families (MP9, M1.5.4, etc.).  can_handle() performs
+#     contextual verification: "MOTRONIC" alone is NOT sufficient — the
+#     binary must ALSO contain a "ME7" family substring.  See Phase 2b in
+#     BoschME7Extractor.can_handle().
 #
 # At least ONE must be present in the first 512KB of the binary.
 # The can_handle() check also verifies the absence of EDC17/MEDC17/MED17
@@ -234,6 +246,10 @@ DETECTION_SIGNATURES: list[bytes] = [
     #         ZZ marker at 0x10000 is 5a5a0001 instead of 5a5affffff —
     #         the first two bytes ('ZZ') are still present.
     b"MOTRONIC",  # Bosch Motronic label — present in most ME7 bins
+    #         ⚠ Requires contextual verification in can_handle(): accepted
+    #         only when b"ME7" is also present in the binary.  Without this
+    #         guard, non-ME7 Motronic families (MP9.0, M1.5.4, M3.8.x …)
+    #         are misidentified as ME7.
 ]
 
 # Fixed offset where the ZZ ident block marker must appear in a genuine ME7

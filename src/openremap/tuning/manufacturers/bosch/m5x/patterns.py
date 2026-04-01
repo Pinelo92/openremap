@@ -4,14 +4,17 @@ Bosch Motronic M5.x ECU binary identifier patterns and search regions.
 Covers the Bosch Motronic M5.x / M3.8x family:
   M3.8    — Bosch Motronic M3.8 / M3.82 / M3.83 / M3.8.3
               VW/Audi 1.8T (AGU engine code), 128KB–256KB dumps (~1997–2001)
+  M3.8.1  — Bosch Motronic M3.8.1 (VR6 2.8L applications)
+              VW Golf 3 / Transporter / Sharan VR6, 128KB dumps (~1995–2000)
   M5.9    — Bosch Motronic M5.9 / M5.92
-              VW/Audi 1.8T (AUM, APX, AWP engine codes), 256KB dumps (~2000–2004)
+              VW/Audi 1.8T (AUM, APX, AWP engine codes), 256KB–512KB dumps (~2000–2004)
+              VW Golf MK3 2.0 ABA 115hp, 512KB dumps (~1995–1999)
 
 These are Motorola C167-based ECUs — the same CPU family as early ME7 — but
 they predate the ME7 generation and use a different binary layout:
 
-  - NO ZZ\xff\xff ident block at 0x10000 (that is ME7-specific)
-  - NO MOTRONIC label in the first 512KB of the search area
+  - NO ZZ\\xff\\xff ident block at 0x10000 (that is ME7-specific)
+  - NO MOTRONIC label in the first 512KB of the search area (for Formats A/B)
   - NO ME7. / ME71 family string anywhere in the binary
   - The HW+SW+family info is in a single slash-delimited ASCII ident string
     located near the END of the binary (around 0xbf1e–0xbf22, regardless of
@@ -30,6 +33,11 @@ Binary structure:
     M5.x string   : ~0x1086–0x1404 (first 64KB)
     MOTR anchor   : ~0xbf22  (within ident string)
 
+  512KB (0x80000 bytes) — e.g. M5.9 bins (VW Golf MK3 2.0 ABA, 037906259):
+    Ident string  : ~0xbf06–0xbf12
+    M5.x string   : ~0x1103 (first 64KB)
+    MOTRONIC anchor: ~0xbf12 (within ident string)
+
 Ident string format (slash-delimited, located near end of binary):
 
   Format A (8D09xxx part numbers — some have garbage prefix bytes):
@@ -39,17 +47,39 @@ Ident string format (slash-delimited, located near end of binary):
   Format B (06A906018xx, 06A906032xx part numbers — clean prefix):
     [OEM_PART] [engine_desc] MOTR [HS] [rev][HW][SW]/[n]/[family]/[ver]/[dataset]/[damos]/...
     e.g. "06A906018AQ 1.8L R4/5VT MOTR HS D030261204678103735810858/1/M3.8.3/03/400303/DAMOS30P/..."
+    e.g. "06A906018BT 1.8L R4/5VT MOTR HS V040261204683103735817156/1/M3.83/381/..."
+
+  Format C (VR6 / Golf MK3 — MOTRONIC keyword, full family in label):
+    [OEM_PART]  MOTRONIC [family]     [rev][HW][SW]/[n]/[family_short]/[ver]/[dataset]/[damos]/...
+    e.g. "037906259   MOTRONIC M5.9       V070261203720103735553251/1/M5.9/03/161/DAMOS235/..."
+    e.g. "021906256H  MOTRONIC M3.8.1     V030261203971103735522749/1/M3.81/03/175/DAMOS85/..."
+    e.g. "071906018AE MOTRONIC M3.8.3     V010261206620103735237155/1/M3.83/03/5223.Sx/DAMOS50/..."
+
+  Format D (VR6 Sharan — MOTOR keyword with PMC, 0xFF gap):
+    [OEM_PART]     MOTOR    PMC [0xFF padding][HW][SW]/[n]/[family]/[ver]/[dataset]/[damos]/...
+    e.g. "021906256Q     MOTOR    PMC \\xff\\xff\\xff\\xff\\xff\\xff\\xff0261203665222735564049/1/3.8.1/03/176/DAMOS81/..."
 
 Fields in the slash-delimited block:
+  [rev]    : Single uppercase letter + 2 digits (e.g. "D03", "D06", "V04")
+              Not present in Format D (MOTOR PMC) — 0xFF gap instead.
   [HW]     : "0261xxxxxx"  — 10 digits, Bosch hardware part number
-  [SW_raw] : "1037xxxxxxxxxx" — always exactly 12 chars in M5.x/M3.8x bins
+  [SW_raw] : 12 digits — always exactly 12 chars in M5.x/M3.8x bins
               The true SW version is always the FIRST 10 digits.
               The last 2 digits are a variant/checksum suffix appended by the
               toolchain and must be stripped: "103735026955" → "1037350269"
-  [family] : "M5.9", "M5.92", "M3.82", "M3.83", "M3.8.3" etc.
+              Known prefixes: 1037, 2537, 2227 (not just 1037)
+  [family] : "M5.9", "M5.92", "M3.82", "M3.83", "M3.8.3", "M3.81", "3.8.1"
               Normalised to the base family: "M5.9" or "M3.8"
 
-SW suffix pattern (observed across all 9 samples):
+SW prefix note:
+  Most bins use the '1037' Bosch-standard SW prefix. However, certain VR6
+  variants use different prefixes:
+    1037 — standard Bosch (M5.9, M5.92, M3.82, M3.83, M3.8.3, some M3.8.1)
+    2537 — VR6 Golf 3 variant (M3.8.1, 0261203969)
+    2227 — VR6 Sharan variant (M3.8.1, 0261203665)
+  All three are valid 10-digit SW versions after stripping the 2-digit suffix.
+
+SW suffix pattern (observed across all samples):
   103735026955  → SW=1037350269  suffix=55
   103735745955  → SW=1037357459  suffix=55
   103735912755  → SW=1037359127  suffix=55
@@ -59,10 +89,12 @@ SW suffix pattern (observed across all 9 samples):
   103735001056  → SW=1037350010  suffix=56
   103735952556  → SW=1037359525  suffix=56
   103735952256  → SW=1037359522  suffix=56
-
-The suffix is always 2 digits; the separator between SW and the next field
-is always '/' (confirmed across all samples). We therefore always read exactly
-10 digits after '1037' from the ident string.
+  103735553251  → SW=1037355532  suffix=51  (MK3 M5.9)
+  103735876854  → SW=1037358768  suffix=54  (MK3 M5.9)
+  253735593852  → SW=2537355938  suffix=52  (VR6 Golf 3)
+  103735522749  → SW=1037355227  suffix=49  (VR6 Transporter)
+  222735564049  → SW=2227355640  suffix=49  (VR6 Sharan)
+  103735237155  → SW=1037352371  suffix=55  (Passat V5)
 
 OEM part number extraction notes:
   Format A bins (8D09xxx) have non-ASCII garbage bytes immediately before the
@@ -70,20 +102,21 @@ OEM part number extraction notes:
   the engine displacement descriptor (" 1.8L").
   Format B bins (06A9xxx) have a clean OEM part at the start of the ident string.
   Both formats are handled by searching for the OEM pattern anchored before "1.8L".
+  Format C/D bins (VR6, MK3) have the OEM part before "MOTRONIC" or "MOTOR".
+  These are handled by the oem_before_motronic pattern.
 
 Detection strategy (no false-positive risk confirmed on all current handled bins):
   Primary   : b"M5." string in the first 64KB  (M5.9 / M5.92 bins)
-  Secondary : Combined ident pattern — MOTR anchor + HW + 12-digit SW + /n/M[35]
-              This fires on BOTH M5.x AND M3.8x bins regardless of whether the
-              explicit M5.x string is present.
-  Sizes     : 128KB (0x20000) and 256KB (0x40000) ONLY.
-              Larger bins (512KB+) with MOTR are ME7 territory — excluded by
-              the size gate AND by the ZZ marker check.
+              b"M3.8" string in the first 64KB  (M3.8x bins, all sub-variants)
+  Secondary : Combined ident pattern — MOTR/MOTRONIC/MOTOR anchor + HW + SW + /n/family
+              This fires on ALL M5.x AND M3.8x bins regardless of whether the
+              explicit M5.x/M3.8 string is present.
+  Sizes     : 128KB (0x20000), 256KB (0x40000), 512KB (0x80000).
 
 Exclusion:
   Bins are NOT M5.x if they contain any modern Bosch signature (EDC17,
-  MEDC17, MED17, ME17, SB_V, Customer., NR000), EDC16/EDC15 markers,
-  or if they are larger than 256KB (those belong to ME7 / EDC15).
+  MEDC17, MED17, ME17, SB_V, Customer., NR000), EDC16/EDC15 markers, or
+  the ME7 ZZ ident block.
 """
 
 from typing import Dict
@@ -93,61 +126,78 @@ from typing import Dict
 # ---------------------------------------------------------------------------
 
 PATTERNS: Dict[str, bytes] = {
-    # The combined ident block: MOTR anchor + rev_field + HW + SW(12) + slash + fields
+    # The combined ident block: anchor + HW + SW(12) + slash + fields.
     # This is the single most reliable source for HW, SW, and family.
-    # Matches both Format A ("MOTR    D0x") and Format B ("MOTR HS Dxx")
+    #
+    # Handles all four ident formats via alternation:
+    #
+    #   Format A: MOTR    D06  0261...1037.../1/M5.92/...
+    #   Format B: MOTR HS D03  0261...1037.../1/M3.8.3/...
+    #   Format C: MOTRONIC M5.9       V07  0261...1037.../1/M5.9/...
+    #             MOTRONIC M3.8.1     V03  0261...1037.../1/M3.81/...
+    #             MOTRONIC M3.8.3     V01  0261...1037.../1/M3.83/...
+    #   Format D: MOTOR    PMC \xff+  0261...2227.../1/3.8.1/...
+    #
     # Groups:
-    #   1 = HW  "0261xxxxxx"
-    #   2 = SW raw 12 digits "1037xxxxxxxxxx"   (strip last 2 for true SW)
-    #   3 = revision/counter field after slash   e.g. "1"
-    #   4 = family field after slash             e.g. "M5.92" / "M3.82" / "M3.8.3"
+    #   1 = HW  "0261xxxxxx"  (10 digits)
+    #   2 = SW raw 12 digits  (strip last 2 for true SW)
+    #   3 = revision/counter field after first slash  e.g. "1"
+    #   4 = family field after second slash  e.g. "M5.92" / "M3.82" / "M3.8.3" / "3.8.1"
     "ident_block": (
-        rb"MOTR(?:\s+HS)?\s+D\d{2}"
-        rb"(0261\d{6})"
-        rb"(1037\d{8})"  # exactly 12 digits total = 4 + 8
-        rb"/(\d)/"
-        rb"([A-Z0-9][0-9\.]{2,6})"  # family: M5.9 / M5.92 / M3.82 / M3.8.3 / M3.83
+        rb"(?:"
+        # Format C: MOTRONIC <family> <spaces> <rev_code>
+        # e.g. "MOTRONIC M5.9       V07", "MOTRONIC M3.8.1     V03"
+        rb"MOTRONIC\s+M[\d.]+\s+[A-Z]\d{2}"
+        rb"|"
+        # Format A/B: MOTR [HS] <rev_code>
+        # e.g. "MOTR    D06", "MOTR HS D03", "MOTR HS V04"
+        rb"MOTR(?:\s+HS)?\s+[A-Z]\d{2}"
+        rb"|"
+        # Format D: MOTOR    PMC <0xFF padding>
+        # e.g. "MOTOR    PMC \xff\xff\xff\xff\xff\xff\xff"
+        rb"MOTOR\s+PMC[\s\xff]+"
+        rb")"
+        rb"(0261\d{6})"  # group 1: HW number (10 digits)
+        rb"(\d{12})"  # group 2: SW raw (12 digits, any prefix)
+        rb"/(\d)/"  # group 3: revision counter
+        rb"([A-Z0-9][0-9\.]{2,6})"  # group 4: family (M5.92, M3.81, 3.8.1 etc.)
     ),
     # OEM (VAG) part number — anchored before the engine displacement string.
-    # Handles both Format A (may have 1–3 garbage chars before) and Format B (clean).
-    # The OEM part always ends with a letter suffix and precedes "  1.8L"
+    # Handles Format A (may have 1–3 garbage chars before) and Format B (clean).
+    # The OEM part always ends with a letter suffix and precedes " 1.8L"
     # Matches: "06A906018AQ", "8D0907557P", "8D0907559"
-    "oem_part_number": rb"([0-9][0-9A-Z]{7,13})\s{1,4}1\.8L",
+    "oem_part_number": rb"([0-9][0-9A-Z]{7,13})\s{1,4}\d\.\d[Ll]",
+    # OEM part number — alternative anchor before MOTRONIC or MOTOR keywords.
+    # Handles Format C (VR6 / MK3) and Format D (Sharan VR6) where the OEM part
+    # appears before "MOTRONIC" or "MOTOR" instead of before an engine displacement.
+    # e.g. "021906256H  MOTRONIC M3.8.1", "037906259   MOTRONIC M5.9"
+    # e.g. "021906256Q     MOTOR    PMC"
+    # Group 1 captures the OEM part number.
+    "oem_before_motronic": rb"([0-9][0-9A-Z]{7,13})\s{1,8}(?:MOTRONIC|MOTOR)\b",
     # Standalone M5.x / M3.8x family string in the first 64KB
     # Used as secondary detection anchor and family name source
-    # Matches: "M5.9", "M5.92", "M3.8", "M3.82", "M3.83", "M3.8.3"
+    # Matches: "M5.9", "M5.92", "M3.8", "M3.82", "M3.83", "M3.8.3", "M3.81", "M3.8.1"
     "ecu_family_string": rb"M[35][\.]\d[\d\.]*\d",
     # Hardware number standalone fallback
     "hardware_number": rb"0261\d{6}",
     # Software version standalone fallback (strict 10-digit)
-    "software_version": rb"1037\d{6}",
+    # Accepts known prefixes: 1037, 1039, 2227, 2537
+    "software_version": rb"(?:1037|1039|2227|2537)\d{6}",
 }
 
 # ---------------------------------------------------------------------------
 # Search regions
 # ---------------------------------------------------------------------------
-# The ident string is always near the end of the file regardless of size.
-# In 128KB bins (0x20000): MOTR at ~0xbf1e → last 0x200 bytes of 0x20000
-# In 256KB bins (0x40000): MOTR at ~0xbf22 → last 0x200 bytes of... wait.
+# The ident string is always at absolute offset ~0xBF00–0xBF30, regardless
+# of total file size. This falls within the first 64KB (0x10000) in ALL
+# supported sizes (128KB, 256KB, 512KB).
 #
-# 0xbf22 is within the LAST 256KB of a 256KB file (= within the last 0x100
-# bytes from end of the 0xbf22 region).  For a 0x40000 (256KB) file:
-#   last 0x1000 = slice(0x3f000, None)  → covers ~0xbf00 if file were 0xc0000
-# Actually 0xbf22 in a 256KB file = offset 0x3f22 from file start (but wait:
-# 0x40000 = 262144, 0xbf22 = 48930 → that is NOT near the end).
+#   In 128KB (0x20000) files, MOTR is at absolute offset ~0xbf1e = 48926
+#   In 256KB (0x40000) files, MOTR is at absolute offset ~0xbf22 = 48930
+#   In 512KB (0x80000) files, MOTRONIC is at absolute offset ~0xbf12 = 48914
 #
-# CORRECTION (from forensics):
-#   In 256KB (0x40000) files, MOTR is at absolute offset 0xbf22.
-#   0xbf22 = 48930 decimal, which is roughly the FIRST 50KB of the 256KB file.
-#   So the ident string is in the first 64KB in ALL variants.
-#
-#   In 128KB (0x20000) files, MOTR is at absolute offset 0xbf1e = 48926,
-#   which is also in the first 64KB (of a 128KB file, 48926 < 65536 = 0x10000).
-#   Wait: 0x20000 = 131072.  0xbf1e = 48926.  48926 < 131072. Yes, first 64KB.
-#
-# So for BOTH sizes, the ident string is in the first 64KB (0x10000 bytes).
-# The M5.x version string is also in the first 64KB.
-# We search the full first 64KB for everything — it is a tight, safe window.
+# All are within the first 64KB (65536 bytes). The M5.x version string is
+# also in the first 64KB. We search the full first 64KB for everything.
 
 SEARCH_REGIONS: Dict[str, slice] = {
     # First 64KB — contains BOTH the ident string AND the M5.x version string
@@ -163,6 +213,7 @@ SEARCH_REGIONS: Dict[str, slice] = {
 PATTERN_REGIONS: Dict[str, str] = {
     "ident_block": "ident_area",
     "oem_part_number": "ident_area",
+    "oem_before_motronic": "ident_area",
     "ecu_family_string": "ident_area",
     "hardware_number": "ident_area",
     "software_version": "ident_area",
@@ -172,34 +223,37 @@ PATTERN_REGIONS: Dict[str, str] = {
 # Supported file sizes
 # ---------------------------------------------------------------------------
 # 0x20000 = 128KB  — M3.82 era (e.g. 8D0907557T, 06A906018D)
+#                     M3.8.1 VR6 (e.g. 021906256, 021906256H, 021906256Q)
 # 0x40000 = 256KB  — M5.9 / M3.8.3 era (e.g. 8D0907557P, 06A906018AQ)
-# Nothing larger — 512KB+ with MOTR belongs to ME7 / EDC15.
+#                     M3.8.3 V5 (e.g. 071906018AE)
+# 0x80000 = 512KB  — M5.9 Golf MK3 2.0 ABA (e.g. 037906259)
 
-SUPPORTED_SIZES: set[int] = {0x20000, 0x40000}
+SUPPORTED_SIZES: set[int] = {0x20000, 0x40000, 0x80000}
 
 # ---------------------------------------------------------------------------
 # Detection signatures (primary positive anchors)
 # ---------------------------------------------------------------------------
 # At least ONE must be present in the search area for can_handle() to proceed.
 # "M5." covers M5.9 and M5.92.
-# "M3.8" covers M3.8, M3.82, M3.83, M3.8.3.
+# "M3.8" covers M3.8, M3.82, M3.83, M3.8.3, M3.81, M3.8.1.
 # Both are absent from every currently-handled ME7 / EDC15 / EDC16 / EDC17 bin
 # (confirmed by false-positive sweep across 119 currently-handled bins).
 
 DETECTION_SIGNATURES: list[bytes] = [
     b"M5.",  # M5.9  M5.92
-    b"M3.8",  # M3.8  M3.82  M3.83  M3.8.3
+    b"M3.8",  # M3.8  M3.82  M3.83  M3.8.3  M3.81  M3.8.1
 ]
 
 # ---------------------------------------------------------------------------
-# Secondary detection pattern (ident block anchor)
+# Secondary detection patterns (ident block anchors)
 # ---------------------------------------------------------------------------
-# The MOTR + 12-digit-SW pattern is the strongest combined anchor.
-# Used as a fallback when the M5./M3.8 string alone is not sufficient.
-# This bytes prefix is present in EVERY M5.x/M3.8x bin and absent from all
-# other known Bosch families of this era.
+# Used as a fallback when the M5./M3.8 primary string alone is not sufficient.
+# MOTR_ANCHOR covers Formats A, B, and C (MOTR is a substring of MOTRONIC).
+# MOTOR_ANCHOR covers Format D (MOTOR    PMC) where the word MOTOR does NOT
+# contain the substring MOTR (M-O-T-O-R vs M-O-T-R).
 
 MOTR_ANCHOR: bytes = b"MOTR"
+MOTOR_ANCHOR: bytes = b"MOTOR"
 
 # ---------------------------------------------------------------------------
 # Exclusion signatures
@@ -228,6 +282,9 @@ EXCLUSION_SIGNATURES: list[bytes] = [
 # ---------------------------------------------------------------------------
 # The raw family string from the ident block may include minor revision
 # suffixes. Normalise to the two canonical base families for the match_key.
+#
+# Note: Format D (Sharan VR6) stores the family as "3.8.1" (without the M
+# prefix). This is normalised to "M3.8" like all other M3.8x sub-variants.
 
 FAMILY_NORMALISATION: Dict[str, str] = {
     "M5.9": "M5.9",
@@ -236,4 +293,7 @@ FAMILY_NORMALISATION: Dict[str, str] = {
     "M3.82": "M3.8",
     "M3.83": "M3.8",
     "M3.8.3": "M3.8",
+    "M3.81": "M3.8",
+    "M3.8.1": "M3.8",
+    "3.8.1": "M3.8",
 }

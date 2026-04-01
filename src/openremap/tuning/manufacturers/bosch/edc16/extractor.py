@@ -11,6 +11,7 @@ Implements BaseManufacturerExtractor for the Bosch EDC16 family:
               family string lives near 0xC0000 mirror section (~0x0C06F3), not at end
   EDC16C39  — Alfa 159 2.4 JTDM, Alfa GT 1.9 JTD 150HP (2005–2008)
   EDC16 VAG PD — Audi A3/A4 1.9 TDI BKC/BKE, 2.0 TDI BKD (03G906016xx, 2004–2008)
+  EDC16 half-flash dump — 512KB partial read, VAG PD (e.g. 03G906021LL Seat Leon 2.0 TDI)
   EDC16 sector dump — 256KB active-section-only read of any of the above
 
 EDC16 sits between EDC15 and EDC17. Key differences from both:
@@ -94,6 +95,7 @@ Verified across all sample bins:
   A3 2.0TDI BKD 03G906016G  1037369819        -> EDC16 PD  sw=1037369819
   A4 1.9TDI BKE 03G906016FE 1037372733 256KB  -> EDC16 PD  sw=1037372733
   A  2.0TDI     03G906016JE 1037372733 256KB  -> EDC16 PD  sw=1037372733
+  Seat Leon 2.0TDI 140HP 03G906021LL  512KB   -> EDC16 PD  sw=1037381350
   0281013409_1037A50286_Vectra_CDTI_120PS.bin  -> EDC16C9   sw=1037A50286
   BMW 120D 163HP 0281012754 379332    2MB      -> EDC16C31  sw=1037379332
   BMW 520D 150HP 0281013251 379332    983040B  -> EDC16C31  sw=1037379332
@@ -132,6 +134,7 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
       EDC16C31/C35 (983040B, active at 0x30000) — BMW truncated read
       EDC16C39  (2MB, active at 0x1c0000)
       EDC16 VAG PD (1MB, active at 0xd0000)
+      EDC16 half-flash dump (512KB, active at 0x0) — VAG PD extended read
       EDC16 sector dump (256KB, active at 0x0)
 
     SW version is read from active_start + 0x10 — the active section is
@@ -174,8 +177,11 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         Return True if this binary is a Bosch EDC16 family ECU.
 
         Four-phase check:
-          1. Reject immediately if any exclusion signature is found in the
-             first 512KB — prevents claiming EDC17/MEDC17/ME7/EDC15 bins.
+          1. Reject immediately if any exclusion signature is found anywhere
+             in the binary — prevents claiming EDC17/MEDC17/ME7/EDC15 bins.
+             The full binary is searched (not just the first 512KB) because
+             some families (e.g. ME7.1.1 in 1MB bins) store their identity
+             strings entirely in the upper half of the file.
           2. Reject if the file size is not one of the known EDC16 sizes
              (256KB, 1MB, or 2MB) — UNLESS the file is a raw active-section
              dump at offset 0 (DECAFE present at 0x3D with valid SW at 0x10).
@@ -192,7 +198,13 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         in _detect_active_start() during extraction — detection only needs
         to confirm the file is EDC16, not which sub-variant it is.
         """
-        search_area = data[:0x80000]
+        # Search the full binary for exclusion signatures.  Earlier versions
+        # searched only data[:0x80000] (first 512KB), but ME7.1.1 bins
+        # (e.g. VW Golf 5 R32 3.2 VR6, 1MB) store all identity strings
+        # (ME7., MOTRONIC) in the upper half (0xE0000+).  The narrow window
+        # missed them, letting Phase 4's flash-layout heuristic falsely
+        # accept the file as scrambled EDC16C8.
+        search_area = data
 
         # Phase 1 — reject on any exclusion signature
         for excl in EXCLUSION_SIGNATURES:
@@ -235,6 +247,13 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         # All three conditions together are specific enough to accept with
         # confidence.  No other known 1MB Bosch family produces this pattern.
         # SW version will be None (scrambled) — the file is still EDC16C8.
+        #
+        # Defence-in-depth: even though Phase 1 now searches the full binary
+        # for exclusion signatures (which would already reject ME7 bins),
+        # we explicitly guard against ME7 here as a safety net.  ME7.1.1
+        # bins (e.g. VW Golf 5 R32 3.2 VR6) share an identical flash
+        # layout (code at bottom, erased gap, cal+ident at top) and would
+        # otherwise pass the fill-ratio thresholds.
         if len(data) == 0x100000:
             boot = data[0x000000:0x040000]
             erased = data[0x040000:0x0E0000]
@@ -243,6 +262,12 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
             erased_ff = erased.count(0xFF) / len(erased)
             cal_ff = cal.count(0xFF) / len(cal)
             if boot_ff < 0.60 and erased_ff >= 0.95 and cal_ff < 0.60:
+                # Guard: reject if ME7 family strings are present anywhere
+                # in the binary.  ME7.1.1 1MB bins have an identical sector
+                # layout but are not EDC16.
+                _me7_sigs = [b"ME7.", b"ME 7.", b"ME71", b"ME731", b"MOTRONIC"]
+                if any(sig in data for sig in _me7_sigs):
+                    return False
                 return True
 
         return False

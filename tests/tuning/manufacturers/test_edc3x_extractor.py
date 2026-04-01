@@ -474,6 +474,49 @@ class TestCanHandlePhase2bGuards:
         buf[0x3F000:0x3F004] = b"1037"
         assert EXTRACTOR.can_handle(bytes(buf)) is False
 
+    def test_format_d_edc15_alpha_sw_rejects_c3_bin(self):
+        """Phase 2c: EDC15 Format-D ident (alpha SW + HEX) must reject.
+
+        Regression test for VW Golf4 1.9 TDI ALH / VW T4 2.5 TDI bins
+        that have high C3 fill (33–48%) and no 1037 prefix. Without this
+        guard they fall through to Phase 5 (C3 catch-all) and get falsely
+        claimed as EDC3x instead of EDC15.
+        """
+        buf = bytearray(0x80000)  # 512KB
+        # Set C3 fill above threshold (~35%)
+        c3_count = int(0x80000 * 0.35)
+        buf[:c3_count] = b"\xc3" * c3_count
+        # Inject EDC15 Format-D ident block
+        ident = b"0281010082 EBETT200HEX"
+        buf[0x5EBD5 : 0x5EBD5 + len(ident)] = ident
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_d_edc15_alpha_sw_rejects_with_different_sw_code(self):
+        """Phase 2c: various Format-D alpha SW codes are rejected."""
+        buf = bytearray(0x80000)
+        c3_count = int(0x80000 * 0.40)
+        buf[:c3_count] = b"\xc3" * c3_count
+        ident = b"0281001979 EBEWU100HEX"
+        buf[0x5EBD5 : 0x5EBD5 + len(ident)] = ident
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_d_edc15_alpha_sw_rejects_with_ebbtm(self):
+        """Phase 2c: EBBTM-style 4-letter alpha SW codes also rejected."""
+        buf = bytearray(0x80000)
+        c3_count = int(0x80000 * 0.48)
+        buf[:c3_count] = b"\xc3" * c3_count
+        ident = b"0281010084 EBBTM100HEX"
+        buf[0x76BD5 : 0x76BD5 + len(ident)] = ident
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_c3_bin_without_format_d_ident_still_accepted(self):
+        """Phase 5 still accepts C3-heavy bins that lack Format-D patterns."""
+        buf = bytearray(0x80000)
+        c3_count = int(0x80000 * 0.35)
+        buf[:c3_count] = b"\xc3" * c3_count
+        # No Format-D ident anywhere → Phase 2c does not fire → Phase 5 accepts
+        assert EXTRACTOR.can_handle(bytes(buf)) is True
+
 
 # ---------------------------------------------------------------------------
 # can_handle() — Phase 3: VAG ident pattern

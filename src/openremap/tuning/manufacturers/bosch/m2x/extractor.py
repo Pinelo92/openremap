@@ -32,6 +32,10 @@ Binary structure (all M2.x, 64KB = 0x10000 bytes):
                       e.g. b'dx4103021620022753762121132409JP'
                            -> hw='4103021620'[::-1]='0261203014'
                            -> sw='0227537621'[::-1]='1267357220'
+                    Format E (VW VR6 multi-PMC):
+                      '<VAG_PART>    MOTOR    <engine_desc>PMC <N> <variant>    ...PMC <N> <variant><HW_10><SW_10>'
+                      e.g. '021906258CK    MOTOR    2,8L 6-Zyl.PMC 1 HS    PMC 2 AG    PMC 3 HS+AGRPMC 4 AG+AGR02612035711267358910'
+                      Engine description and multiple PMC variant entries appear between MOTOR and the HW+SW digits.
 
                     In Format A bins the label is consistently located at a
                     fixed region near the end of ROM:
@@ -137,11 +141,12 @@ class BoschM2xExtractor(BaseManufacturerExtractor):
     HW and SW are stored as plain ASCII in the MOTOR label block — no
     reversed-digit encoding like M1.x/M3.x.
 
-    Four label formats:
+    Five label formats:
       Format A (standard):  '<VAG_PART>    MOTOR    PMC <HW><SW>'
       Format B (Porsche):   'M<rev>MOTRONIC<model><part><HW><XX><SW>'
       Format C (Opel):      b'\xff{3+} <HW_10> <SW_10> ...'
       Format D (Opel M2.7): b'dx<HW_reversed><SW_reversed>'
+      Format E (VW VR6):    '<VAG_PART>    MOTOR    <engine_desc>PMC...PMC...<HW><SW>'
     """
 
     # -----------------------------------------------------------------------
@@ -305,7 +310,8 @@ class BoschM2xExtractor(BaseManufacturerExtractor):
         Parse the MOTOR ident label and return (hw, sw, oem_part).
 
         Tries Format A first (standard VW/Audi M2.9), then Format B
-        (Porsche 964 / M2.3 MOTRONIC variant).
+        (Porsche 964 / M2.3 MOTRONIC variant), then Format C (Opel),
+        Format D (Opel M2.7 reversed), and Format E (VW VR6 multi-PMC).
 
         Returns:
             Tuple of (hardware_number, software_version, oem_part_number).
@@ -388,5 +394,20 @@ class BoschM2xExtractor(BaseManufacturerExtractor):
                 sw.startswith("1267") or sw.startswith("2227")
             ):
                 return hw, sw, None
+
+        # --- Format E: VW VR6 multi-PMC label ---
+        # e.g. '021906258CK    MOTOR    2,8L 6-Zyl.PMC 1 HS    PMC 2 AG    PMC 3 HS+AGRPMC 4 AG+AGR02612035711267358910'
+        # Between MOTOR and the HW+SW there is engine description text and multiple
+        # PMC variant entries. The .{10,120}? bridge handles this variable-length gap.
+        m_e = re.search(
+            rb"[^\x20-\x7e]{0,4}([0-9][0-9A-Z]{7,13})\s{2,8}MOTOR\s+.{10,120}?(0261\d{6})((?:1267|2227)\d{6})",
+            search_region,
+            re.DOTALL,
+        )
+        if m_e:
+            oem = m_e.group(1).decode("ascii", errors="ignore").strip()
+            hw = m_e.group(2).decode("ascii", errors="ignore")
+            sw = m_e.group(3).decode("ascii", errors="ignore")
+            return hw, sw, oem
 
         return None, None, None

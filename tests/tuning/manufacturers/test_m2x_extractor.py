@@ -629,3 +629,135 @@ class TestCoverageM2xFallbackEdges:
         assert hw is None
         assert sw is None
         assert oem is None
+
+
+# ---------------------------------------------------------------------------
+# Binary factory — Format E (VW VR6 multi-PMC MOTOR label)
+# ---------------------------------------------------------------------------
+
+
+def make_m2x_vr6_bin() -> bytes:
+    """
+    64KB VW VR6 binary with M2.9 family marker and Format E MOTOR label.
+
+    Family marker '"0000000M2.9 ' at 0x6E30 (within code region).
+    MOTOR label at 0xEF02 — within MOTOR_LABEL_REGION (last 20KB of 64KB file):
+        last 20KB starts at offset 65536 - 20480 = 45056 = 0xB000
+        0xEF02 = 61186 > 45056  → within region ✓
+
+    Format E VR6 MOTOR label:
+        '021906258CK    MOTOR    2,8L 6-Zyl.PMC 1 HS    PMC 2 AG    PMC 3 HS+AGRPMC 4 AG+AGR02612035711267358910'
+        oem  = '021906258CK'
+        hw   = '0261203571'
+        sw   = '1267358910'
+
+    The engine description ('2,8L 6-Zyl.') and multiple PMC entries
+    ('PMC 1 HS', 'PMC 2 AG', 'PMC 3 HS+AGR', 'PMC 4 AG+AGR') sit between
+    MOTOR and the trailing HW/SW numbers.
+    """
+    buf = bytearray(0x10000)  # 64KB
+
+    # Phase 2 detection: canonical M2.x family marker
+    marker = b'"0000000M2.9 '
+    buf[0x6E30 : 0x6E30 + len(marker)] = marker
+
+    # Format E VR6 MOTOR label — multi-PMC with engine description
+    motor = (
+        b"021906258CK    MOTOR    2,8L 6-Zyl."
+        b"PMC 1 HS    PMC 2 AG    PMC 3 HS+AGR"
+        b"PMC 4 AG+AGR"
+        b"02612035711267358910"
+    )
+    buf[0xEF02 : 0xEF02 + len(motor)] = motor
+
+    return bytes(buf)
+
+
+# ---------------------------------------------------------------------------
+# extract() — Format E (VW VR6 multi-PMC MOTOR label)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractFormatEVR6:
+    """VW VR6 Format E: multi-PMC MOTOR label with engine description."""
+
+    def setup_method(self):
+        self.data = make_m2x_vr6_bin()
+        self.result = EXTRACTOR.extract(self.data)
+
+    def test_can_handle_accepts_vr6_bin(self):
+        assert EXTRACTOR.can_handle(self.data) is True
+
+    def test_manufacturer_is_bosch(self):
+        assert self.result["manufacturer"] == "Bosch"
+
+    def test_hardware_number_extracted(self):
+        assert self.result["hardware_number"] == "0261203571"
+
+    def test_hardware_number_starts_with_0261(self):
+        assert self.result["hardware_number"].startswith("0261")
+
+    def test_software_version_extracted(self):
+        assert self.result["software_version"] == "1267358910"
+
+    def test_software_version_starts_with_1267(self):
+        assert self.result["software_version"].startswith("1267")
+
+    def test_oem_part_number_extracted(self):
+        assert self.result["oem_part_number"] == "021906258CK"
+
+    def test_ecu_family_is_m29(self):
+        assert self.result["ecu_family"] == "M2.9"
+
+    def test_match_key_contains_sw(self):
+        assert "1267358910" in self.result["match_key"]
+
+    def test_match_key_contains_m29(self):
+        assert "M2.9" in self.result["match_key"]
+
+    def test_file_size_is_64kb(self):
+        assert self.result["file_size"] == 0x10000
+
+    def test_all_required_keys_present(self):
+        for key in REQUIRED_EXTRACT_KEYS:
+            assert key in self.result, f"Missing required key: {key!r}"
+
+
+# ---------------------------------------------------------------------------
+# Format E edge cases and non-interference
+# ---------------------------------------------------------------------------
+
+
+class TestFormatEVariants:
+    """Edge cases for VR6 Format E and non-interference with Format A."""
+
+    def test_vr6_2227_sw_prefix_extracted(self):
+        """Format E also accepts SW starting with '2227'."""
+        buf = bytearray(0x10000)
+        marker = b'"0000000M2.9 '
+        buf[0x6E30 : 0x6E30 + len(marker)] = marker
+        motor = (
+            b"021906258CK    MOTOR    2,8L 6-Zyl."
+            b"PMC 1 HS    PMC 2 AG    PMC 3 HS+AGR"
+            b"PMC 4 AG+AGR"
+            b"02612035712227358910"
+        )
+        buf[0xEF02 : 0xEF02 + len(motor)] = motor
+        result = EXTRACTOR.extract(bytes(buf))
+        sw = result["software_version"]
+        assert sw is not None
+        assert sw.startswith("2227")
+        assert sw == "2227358910"
+
+    def test_format_e_does_not_shadow_format_a(self):
+        """A standard Format A binary still extracts correctly via Format A.
+
+        The Format E regex (added later) must not interfere with the simpler
+        Format A pattern when the label contains only a single PMC entry.
+        """
+        data = make_m2x_bin()
+        result = EXTRACTOR.extract(data)
+        assert result["hardware_number"] == "0261203219"
+        assert result["software_version"] == "1267358109"
+        assert result["oem_part_number"] is not None
+        assert "021906258" in result["oem_part_number"]

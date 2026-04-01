@@ -122,7 +122,7 @@ class TestSW1037:
                 match_key="EDC17::1037541778",
             )
         )
-        assert any("1037" in s.label for s in result.signals)
+        assert any("canonical" in s.label for s in result.signals)
 
     def test_1037_sw_signal_delta_is_40(self):
         result = score_identity(

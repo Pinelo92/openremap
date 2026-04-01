@@ -89,19 +89,54 @@ Detection — fallback path (BMW M1.7 and Opel M1.x bins without the standard he
     finds nothing, and ONLY for files that already passed the family-marker
     and size gates.
 
+M1.8 — Volvo 960 / 940 / 240 inline-6 petrol engines (~1989–1995)
+  Bosch Motronic M1.8, SAB80C515 (8051-family) CPU.
+  ROM size: exactly 32KB (0x8000).
+  Detection: Phase 2d — the '"0000000M0.0' family marker is present
+             in the binary AND the b'M1.8' ASCII string is present
+             AND the file size is 32KB or 64KB.
+  The '"0000000M0.0' marker is the 8051-era placeholder used in Volvo
+  M1.8 binaries; the actual family is identified by the separate 'M1.8'
+  string embedded in the ident block near 0x7EA0.
+
+  Unlike M1.3/M1.7 bins, the M1.8 does NOT use reversed-digit ident
+  encoding.  Instead, the ident is a structured ASCII block:
+
+    Format: E<rev>M18<spaces><digit_seq>M1.8<spaces><revision>
+    e.g.  : "E00M18     928618124110227400035M1.8  0000"
+
+    Fields:
+      E<rev>   : ECU hardware revision (e.g. "E00")
+      M18      : Short family name
+      digit_seq: Volvo OEM part + Bosch coding (variable length, 15–25 digits)
+                 First 7 digits = Volvo part number (e.g. "9286181" = Volvo 928 618-1)
+      M1.8     : Full family name
+      revision : 4-digit revision code (e.g. "0000")
+
+  HW / SW in the filename (0261200528 / 357234) are NOT stored as ASCII
+  in the binary.  Partial BCD-encoded values appear at the ROM tail:
+    0x7FF2: last 4 digits of HW as packed BCD (e.g. 0x0528 → "0528")
+    0x7FF4: last 4 digits of SW as packed BCD (e.g. 0x7234 → "7234")
+  These are used for verification but cannot reconstruct the full numbers.
+
+  match_key uses the full digit sequence from the ident block as the
+  unique calibration fingerprint.
+
 Verified across all known sample bins:
-    318i_175_soft1267356378.bin         -> hw=0261200175  sw=1267356378  (M1.7, magic)
-    318i_ecu990_soft070.bin             -> hw=0261200990  sw=1267357070  (M1.7, magic)
-    STOCK282.BIN                        -> hw=0261203282  sw=1267357626  (M1.7, magic)
-    BMW_179.bin                         -> hw=0261200179  sw=1267356334  (M1.3, magic)
-    Bmw 850i ...0261200352...bin        -> hw=0261200352  sw=1267356566  (M1.3, magic)
-    stock173.bin                        -> hw=0261200173  sw=1267355705  (M1.3, magic)
-    153stock.bin                        -> hw=0261200153  sw=1267355408  (M1.x, magic)
-    BMW_0261200153_1267355367.bin       -> hw=0261200153  sw=1267355367  (M1.x, magic)
-    BMW_E32_750i_156.BIN                -> hw=0261200156  sw=1267356101  (M1.x, magic)
-    BMW 318 E36 1.8i 0261200520 ...ori  -> hw=0261200520  sw=1267356585  (M1.7, fallback)
-    Bmw E36 318is 0261203590 ...ori     -> hw=0261203590  sw=1267358597  (M1.7, fallback)
-    BMW E36 316 0261203660 ...ori       -> hw=0261203660  sw=1267358700  (M1.7, fallback, gap)
+  318i_175_soft1267356378.bin         -> hw=0261200175  sw=1267356378  (M1.7, magic)
+  318i_ecu990_soft070.bin             -> hw=0261200990  sw=1267357070  (M1.7, magic)
+  STOCK282.BIN                        -> hw=0261203282  sw=1267357626  (M1.7, magic)
+  BMW_179.bin                         -> hw=0261200179  sw=1267356334  (M1.3, magic)
+  Bmw 850i ...0261200352...bin        -> hw=0261200352  sw=1267356566  (M1.3, magic)
+  stock173.bin                        -> hw=0261200173  sw=1267355705  (M1.3, magic)
+  153stock.bin                        -> hw=0261200153  sw=1267355408  (M1.x, magic)
+  BMW_0261200153_1267355367.bin       -> hw=0261200153  sw=1267355367  (M1.x, magic)
+  BMW_E32_750i_156.BIN                -> hw=0261200156  sw=1267356101  (M1.x, magic)
+  BMW 318 E36 1.8i 0261200520 ...ori  -> hw=0261200520  sw=1267356585  (M1.7, fallback)
+  Bmw E36 318is 0261203590 ...ori     -> hw=0261203590  sw=1267358597  (M1.7, fallback)
+  BMW E36 316 0261203660 ...ori       -> hw=0261203660  sw=1267358700  (M1.7, fallback, gap)
+  Volvo 960 2.9 B6304 0261200528 357234.ori
+                                      -> family=M1.8  digits=928618124110227400035  (M1.8, Phase 2d)
 """
 
 import hashlib
@@ -133,7 +168,42 @@ DETECTION_MAGIC: bytes = b"\x85\x0a\xf0\x30"
 FAMILY_MARKERS: Dict[bytes, str] = {
     b'"0000000M1.7': "M1.7",
     b'"0000000M1.3': "M1.3",
+    b'"0000000M0.0': "M1.8",
 }
+
+# ---------------------------------------------------------------------------
+# M1.8 detection constants
+# ---------------------------------------------------------------------------
+# The M1.8 (Volvo 960 / 940 / 240) uses a completely different binary format
+# from M1.3/M1.7 — 8051 CPU, no reversed-digit ident encoding, and a
+# structured ASCII ident block near 0x7EA0.
+#
+# M18_FAMILY_STRING is a secondary positive anchor: the ASCII bytes "M1.8"
+# must be present in the upper ROM region.  Combined with the M0.0 family
+# marker this makes M1.8 detection very specific.
+#
+# M18_IDENT_RE matches the structured ident block:
+#   "E00M18     928618124110227400035M1.8  0000"
+#   Groups:
+#     1 = variant code  (e.g. "E00")
+#     2 = digit sequence (e.g. "928618124110227400035")
+#     3 = revision       (e.g. "0000")
+# ---------------------------------------------------------------------------
+
+M18_FAMILY_STRING: bytes = b"M1.8"
+
+M18_IDENT_RE: bytes = (
+    rb"(E\d{2})"  # group 1: variant code (e.g. "E00")
+    rb"M18"  # short family name (literal)
+    rb"\s{2,12}"  # padding spaces
+    rb"(\d{10,30})"  # group 2: digit sequence (Volvo part + Bosch coding)
+    rb"M1\.8"  # full family name (literal)
+    rb"\s{1,6}"  # padding spaces
+    rb"(\d{4})"  # group 3: revision (e.g. "0000")
+)
+
+# Search region for M1.8 ident — upper half of 32KB ROM (0x7000–0x8000)
+M18_IDENT_REGION: slice = slice(0x7000, 0x8000)
 
 # ---------------------------------------------------------------------------
 # Exclusion signatures
@@ -208,7 +278,7 @@ GAP_IDENT_PATTERN: bytes = rb"(\d{25,30})\xff{1,8}(\d{2,5})"
 class BoschM1xExtractor(BaseManufacturerExtractor):
     """
     Extractor for Bosch Motronic M1.x ECU binaries.
-    Handles: M1.3, M1.7, and generic M1.x (no explicit sub-variant).
+    Handles: M1.3, M1.7, M1.8 (Volvo), and generic M1.x (no explicit sub-variant).
 
     Detection is anchored on the 4-byte ROM header magic \\x85\\x0a\\xf0\\x30
     which is unique to this family.  Sub-variant (M1.3 / M1.7) is resolved
@@ -230,7 +300,7 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
 
     @property
     def supported_families(self) -> List[str]:
-        return ["M1.7", "M1.3", "M1.x"]
+        return ["M1.7", "M1.3", "M1.8", "M1.x"]
 
     # -----------------------------------------------------------------------
     # Detection
@@ -240,7 +310,7 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
         """
         Return True if this binary is a Bosch Motronic M1.x ECU.
 
-        Multi-phase check (Phase 1, 2a, 2b, 2c):
+        Multi-phase check (Phase 1, 2a, 2b, 2c, 2d):
 
           Phase 1 — Exclusion.
             Reject immediately if any exclusion signature is found in the
@@ -251,6 +321,13 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
             Accept if the 4-byte magic \\x85\\x0a\\xf0\\x30 is present at
             offset 0.  This is the strongest possible anchor — exclusive to
             M1.x and absent from every other known Bosch family.
+
+          Phase 2d — M1.8 (Volvo): '"0000000M0.0' marker + 'M1.8' string.
+            Volvo M1.8 bins are SAB80C515 (8051-family) and use a completely
+            different ident format from M1.3/M1.7.  Detected by the
+            combination of the '"0000000M0.0' family marker AND the 'M1.8'
+            ASCII string in the upper ROM region.  Both must be present.
+            Size must be 32KB or 64KB.
 
           Phase 2b — BMW M1.7 fallback: family marker present, no header magic.
             A subset of BMW M1.7 32KB/64KB bins lack the standard header
@@ -281,6 +358,13 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
         if data[:4] == DETECTION_MAGIC:
             return True
 
+        # Phase 2d — M1.8 (Volvo): M0.0 family marker + M1.8 string
+        # Must come before 2b/2c because the M0.0 marker is in FAMILY_MARKERS
+        # and the file would otherwise fall through to _fallback_ident_valid()
+        # which would reject it (no reversed-digit ident).
+        if len(data) in FALLBACK_VALID_SIZES and self._is_m18(data):
+            return True
+
         # Phase 2b/2c — size gate + ident fallback (BMW and Opel M1.x variants)
         #
         # Some BMW M1.7 bins lack the standard ROM header magic — they are still
@@ -301,6 +385,23 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
     # -----------------------------------------------------------------------
     # Internal — fallback ident validity check (used by can_handle Phase 2b/2c)
     # -----------------------------------------------------------------------
+
+    def _is_m18(self, data: bytes) -> bool:
+        """
+        Return True if the binary is a Volvo Motronic M1.8.
+
+        Requires BOTH positive anchors to be present:
+          1. The '"0000000M0.0' family marker (already in FAMILY_MARKERS)
+          2. The 'M1.8' ASCII string in the upper ROM region
+
+        The dual-anchor requirement prevents false positives from any file
+        that might contain one of the two strings by coincidence.
+        """
+        if b'"0000000M0.0' not in data:
+            return False
+        if M18_FAMILY_STRING not in data:
+            return False
+        return True
 
     def _fallback_ident_valid(self, data: bytes) -> bool:
         """
@@ -352,7 +453,12 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
         Extract all identifying information from a Bosch M1.x ECU binary.
 
         Returns a dict fully compatible with ECUIdentifiersSchema.
+        Dispatches to _extract_m18() for M1.8 (Volvo) binaries.
         """
+        # --- M1.8 dispatch ---
+        if self._is_m18(data):
+            return self._extract_m18(data, filename)
+
         result: Dict = {
             "manufacturer": self.name,
             "file_size": len(data),
@@ -412,6 +518,87 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
     # -----------------------------------------------------------------------
     # Internal — match key builder (preserves lowercase 'x' in M1.x)
     # -----------------------------------------------------------------------
+
+    # -----------------------------------------------------------------------
+    # Internal — M1.8 (Volvo) extraction
+    # -----------------------------------------------------------------------
+
+    def _extract_m18(self, data: bytes, filename: str = "unknown.bin") -> Dict:
+        """
+        Extract identifying information from a Volvo Motronic M1.8 binary.
+
+        The M1.8 uses a completely different ident format from M1.3/M1.7:
+          - No reversed-digit encoding
+          - Structured ASCII ident block near 0x7EA0:
+            "E00M18     928618124110227400035M1.8  0000"
+          - Volvo OEM part encoded in the digit sequence (first 7 digits)
+          - Partial HW/SW as packed BCD in the ROM tail (0x7FF2, 0x7FF4)
+
+        Returns a dict fully compatible with ECUIdentifiersSchema.
+        """
+        result: Dict = {
+            "manufacturer": self.name,
+            "file_size": len(data),
+            "md5": hashlib.md5(data).hexdigest(),
+            "sha256_first_64kb": hashlib.sha256(data[:0x10000]).hexdigest(),
+        }
+
+        # --- Step 1: Raw ASCII strings from the M1.8 ident region ---
+        result["raw_strings"] = self.extract_raw_strings(
+            data=data,
+            region=M18_IDENT_REGION,
+            min_length=8,
+            max_results=20,
+        )
+
+        # --- Step 2: Family is always M1.8 ---
+        result["ecu_family"] = "M1.8"
+        result["ecu_variant"] = "M1.8"
+
+        # --- Step 3: Parse the M1.8 ident block ---
+        m18_match = re.search(M18_IDENT_RE, data[M18_IDENT_REGION])
+
+        digit_seq: Optional[str] = None
+        variant_code: Optional[str] = None
+        revision: Optional[str] = None
+
+        if m18_match:
+            variant_code = m18_match.group(1).decode("ascii", errors="ignore")
+            digit_seq = m18_match.group(2).decode("ascii", errors="ignore")
+            revision = m18_match.group(3).decode("ascii", errors="ignore")
+
+        # --- Step 4: Extract Volvo OEM part from digit sequence ---
+        # Volvo part numbers are 7 digits in NNN NNN-N format
+        # (e.g. 9286181 = Volvo 928 618-1)
+        oem_part: Optional[str] = None
+        if digit_seq and len(digit_seq) >= 7:
+            oem_part = digit_seq[:7]
+        result["oem_part_number"] = oem_part
+
+        # --- Step 5: HW and SW ---
+        # The full 10-digit HW/SW are not available as ASCII in the binary.
+        # Partial BCD at 0x7FF2 (HW last 4) and 0x7FF4 (SW last 4) exist
+        # but cannot reconstruct the full numbers without external info.
+        result["hardware_number"] = None
+        result["software_version"] = None
+
+        # --- Step 6: Calibration fields ---
+        result["calibration_id"] = variant_code
+        result["calibration_version"] = revision
+        result["sw_base_version"] = None
+        result["serial_number"] = None
+        result["dataset_number"] = None
+
+        # --- Step 7: Build match key using the digit sequence ---
+        # The digit sequence is the unique calibration fingerprint for M1.8.
+        # Since there is no standard SW version, we use the digit sequence
+        # as the version component of the match key.
+        if digit_seq:
+            result["match_key"] = f"M1.8::{digit_seq}"
+        else:
+            result["match_key"] = None
+
+        return result
 
     def _build_m1x_match_key(
         self,

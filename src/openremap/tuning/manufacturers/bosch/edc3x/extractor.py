@@ -416,6 +416,23 @@ OPEL_256_TSW_REGION: slice = slice(0xBFC0, 0xC040)
 # ---------------------------------------------------------------------------
 RAW_STRINGS_TAIL: int = 512
 
+# ---------------------------------------------------------------------------
+# Split-ROM chip detection (16-bit paired chips)
+# ---------------------------------------------------------------------------
+# Some EDC3 ECUs use paired 128KB ROM chips (HI + LO) for a 16-bit data bus.
+# Each chip alone contains only every other byte of the full 256KB ROM, so
+# ASCII ident data spanning both bytes is unreadable from a single chip.
+#
+# Each chip carries a chip-specific marker near offset 0x8010:
+#   \x55 A030024G Lo E    — LO chip (low-byte)
+#   \xaa A030024G Hi E    — HI chip (high-byte)
+#
+# The marker format: [sentinel] [part_number] [Lo|Hi] [qualifier]
+# ---------------------------------------------------------------------------
+SPLIT_ROM_CHIP_PATTERN: re.Pattern = re.compile(
+    rb"[\x55\xaa]([A-Z0-9]{6,10})(Lo|Hi|LO|HI|lo|hi)"
+)
+
 
 class BoschEDC3xExtractor(BaseManufacturerExtractor):
     """
@@ -454,6 +471,11 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
         Phase 1 — Size gate: 128KB / 256KB / 512KB only.
         Phase 2 — Exclusion: no EDC15 / ME7 / M5.x / EDC16 / EDC17 markers.
         Phase 2b — No 1037 SW prefix (EDC15 Format-B guard).
+        Phase 2c — No Format-D EDC15 ident (alpha SW + HEX guard).
+                   Rejects early EDC15 VP37/VP44 bins that carry alphanumeric
+                   SW codes (e.g. 'EBETT200') instead of 1037 prefixes.
+                   Without this guard those bins slip past Phase 2b and
+                   get falsely claimed via the Phase 5 C3 fill catch-all.
         Phase 3 — Primary: VAG ident pattern (HEX block) anywhere in binary.
         Phase 3b — Primary: BMW numeric ident pattern (5331xx or 3150 block).
         Phase 4 — Fallback A: EDC3x header magic at offset 0.
@@ -476,6 +498,14 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
 
         # Phase 2b — reject Format-B EDC15 bins that carry a 1037 SW number
         if EDC15_SW_PREFIX in data:
+            return False
+
+        # Phase 2c — reject Format-D EDC15 bins (early VP37/VP44) that carry
+        # alphanumeric SW codes (e.g. 'EBETT200') instead of 1037 prefixes.
+        # These bins have high 0xC3 fill (33–48%) and slip past Phase 2b,
+        # so without this guard they fall through to Phase 5 (C3 fill
+        # catch-all) and get falsely claimed as EDC3x.
+        if re.search(rb"0281\d{6}\s+EB[A-Z]{2,4}\d{3}HEX", data):
             return False
 
         # Phase 3 — primary: VAG ident pattern
@@ -577,6 +607,16 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
             oem_part, hardware_number, software_version, ecu_variant = (
                 self._parse_ident_opel(data)
             )
+
+        # If no ident was found by any parser, check if this is a split-ROM chip.
+        # Split-ROM chips contain only half the data (every other byte) so the
+        # ASCII ident is unreadable, but we can identify the chip itself.
+        if software_version is None and hardware_number is None:
+            chip_part, chip_type = self._detect_split_rom_chip(data)
+            if chip_part is not None:
+                ecu_variant = f"split-ROM-{chip_type}"
+                # Store the chip part number as a reference
+                oem_part = chip_part
 
         result["oem_part_number"] = oem_part
         result["hardware_number"] = hardware_number
@@ -755,6 +795,30 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
     # -----------------------------------------------------------------------
     # Internal — Opel ident parser (Format 3)
     # -----------------------------------------------------------------------
+
+    def _detect_split_rom_chip(
+        self, data: bytes
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Detect if this binary is a single chip from a 16-bit split-ROM pair.
+
+        Returns (chip_part_number, chip_type) where chip_type is 'Lo' or 'Hi',
+        or (None, None) if this is not a split-ROM chip.
+
+        Only checks 128KB binaries in the region around 0x8000-0x8040
+        where the chip marker is stored.
+        """
+        if len(data) != 0x20000:  # Only 128KB chips
+            return None, None
+
+        window = data[0x7FF0:0x8050]
+        m = SPLIT_ROM_CHIP_PATTERN.search(window)
+        if m is None:
+            return None, None
+
+        part_number = m.group(1).decode("ascii", errors="ignore")
+        chip_type = m.group(2).decode("ascii", errors="ignore")
+        return part_number, chip_type
 
     def _parse_ident_opel(
         self, data: bytes

@@ -8,19 +8,27 @@
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
-> **CLI tool. Runs on your machine. No internet. No account. No data leaves your hands — ever.**
+> **Runs on your machine. No internet. No account. No data leaves your hands — ever.**
 
 Drop a `.bin`, know exactly what it is. Triage a folder of hundreds. Apply a tune you can read in any text editor.
 
-**Identify** — manufacturer, ECU family, software version, hardware number, and a confidence verdict in under a second. Works on anything from an 8 KB LH-Jetronic ROM to an 8 MB EDC17 dump.
+<p align="center">
+  <img src="docs/images/tui-scan.png" alt="OpenRemap TUI — Scan panel" width="820">
+</p>
 
-**Confidence scoring** — signals read straight from the binary: SW version integrity, hardware part number, ident block presence. Wiped idents, tuned-but-relabelled dumps, and modified files are flagged before you've touched anything. `HIGH` means it looks factory-fresh. `SUSPICIOUS` means stop and check.
+---
 
-**Scan and organise** — point `scan` at a folder of hundreds of mixed binaries and get them sorted into `Bosch/EDC17/`, `Bosch/ME7/`, etc. in one command. Every file classified, confidence-tagged, and optionally exported to JSON or CSV.
+## What it does
 
-**Tune with a recipe you can read** — diff a stock and a modified binary into a portable JSON file. Inspect every changed byte offset before applying anything. `tune` validates, patches, and verifies in one shot. The full audit trail is a file you can open in Notepad.
+- **Identify** — manufacturer, ECU family, software version, hardware number, and a confidence verdict. Under a second.
+- **Scan & organise** — point at a folder of mixed binaries and sort them into `Bosch/EDC17/`, `Bosch/ME7/`, etc. in one click. Every file classified and confidence-tagged.
+- **Cook** — diff a stock and modified binary into a portable JSON recipe. Every changed byte, readable in Notepad.
+- **Tune** — validate, patch, and verify in one shot. Full audit trail baked in.
+- **Confidence scoring** — `HIGH`, `MEDIUM`, `LOW`, `SUSPICIOUS`, or `UNKNOWN` — based on signals read straight from the binary. Modified files are flagged before you touch anything.
 
-→ [How it works in detail](docs/about.md)
+17 Bosch ECU families supported — from 8 KB LH-Jetronic ROMs (1982) to 8 MB EDC17 flash dumps. → [Full family reference](docs/manufacturers/bosch.md)
+
+→ [How it all works in detail](docs/about.md)
 
 ---
 
@@ -32,81 +40,32 @@ Drop a `.bin`, know exactly what it is. Triage a folder of hundreds. Apply a tun
 
 ---
 
-## Supported ECU Families
-
-15 Bosch families supported — spanning 1982 to the present, from 8 KB LH-Jetronic ROMs to 8 MB EDC17 flash dumps. The registry is designed to be extended to any manufacturer without touching existing code.
-
-→ **[Full family reference](docs/manufacturers/bosch.md)** — era, file sizes, vehicle applications, and notes for every supported family.
-
-Adding a new manufacturer? → [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
-
-## CLI Quickstart
-
-> **New here?** Run `openremap workflow` first — it prints a complete plain-English guide with every step, the exact commands to type, and what to do when something goes wrong. No reading required.
-
-Full CLI reference → [`docs/cli.md`](docs/cli.md)
+## Get started
 
 ```bash
-# New here? Print the full step-by-step guide
-openremap workflow
-
-# Quick reminder of every command and its syntax
-openremap commands
-
-# List every supported ECU family (add --family EDC16 for full detail)
-openremap families
-
-# Identify a binary — manufacturer, family, SW version, hardware number, confidence
-openremap identify ecu.bin
-
-# Batch-scan a folder — dry-run preview, nothing moves
-openremap scan ./my_bins/
-
-# Sort into a manufacturer/family tree when you're happy with the preview
-openremap scan ./my_bins/ --move --organize
-
-# Diff a stock and a tuned binary into a portable recipe
-openremap cook stock.bin stage1.bin --output recipe.json
-
-# One-shot: validate before → apply → validate after  (writes target_tuned.bin)
-openremap tune target.bin recipe.json
-
-# Phase 1 failed? Diagnose why — searches the whole binary for shifted or missing maps
-openremap validate check target.bin recipe.json
+openremap
 ```
 
-> 🔴 **CHECKSUM VERIFICATION IS MANDATORY**
-> Before flashing any tuned binary to a vehicle, you **must** run it through a
-> dedicated checksum correction tool (ECM Titanium, WinOLS, or equivalent).
-> `openremap tune` Phase 3 confirms the recipe was applied correctly — it does **not**
-> correct or validate ECU checksums. Flashing a binary with an incorrect checksum
-> **will brick your ECU.** No exceptions.
+That's it. The full terminal UI launches — identify files, scan folders, cook recipes, and apply tunes, all from one interface. No flags to memorise.
 
----
+The complete CLI is still there when you need it:
 
-## Confidence Scoring
+```bash
+openremap workflow    # Prints a plain-English guide with every step and command
+openremap commands    # Quick reference for all available commands
+```
 
-Every `identify` result and every `scan` line includes a confidence tier — `HIGH`, `MEDIUM`, `LOW`, `SUSPICIOUS`, or `UNKNOWN` — based on signals read directly from the binary: SW version integrity, hardware part number, ident block presence, and filename. `SUSPICIOUS` is not a verdict; it is a prompt to look closer.
-
-→ **[Full reference: tiers, signals, warnings, and score breakdown](docs/confidence.md)**
+→ [Full CLI reference](docs/cli.md)
 
 ---
 
 ## Documentation
 
-| Document | Contents |
-|---|---|
-| [`docs/install/windows.md`](docs/install/windows.md) | Windows install — step-by-step for first-time terminal users |
-| [`docs/install/macos-linux.md`](docs/install/macos-linux.md) | macOS / Linux install — uv, pip, shell completion, troubleshooting |
-| [`docs/install/developers.md`](docs/install/developers.md) | Developer setup — clone, test suite, project structure, publishing |
-| [`docs/cli.md`](docs/cli.md) | Commands overview — what each command does, with links to full per-command pages |
-| [`docs/confidence.md`](docs/confidence.md) | Confidence scoring — tiers, signals, warnings, and score breakdown |
-| [`docs/manufacturers/bosch.md`](docs/manufacturers/bosch.md) | Supported Bosch ECU families — era, file sizes, vehicle applications, confidence notes |
-| [`docs/recipe-format.md`](docs/recipe-format.md) | The recipe JSON spec — fields, structure, versioning |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to add a new ECU extractor, code style, submitting a PR, contributor safety notice |
-| [`DISCLAIMER.md`](DISCLAIMER.md) | Liability, intended use, professional review requirements, legal notice |
+- [CLI commands overview](docs/cli.md)
+- [Confidence scoring — tiers, signals, and breakdown](docs/confidence.md)
+- [Supported Bosch ECU families](docs/manufacturers/bosch.md)
+- [Recipe JSON format](docs/recipe-format.md)
+- [Contributing — adding extractors, code style, PRs](CONTRIBUTING.md)
 
 ---
 
@@ -120,4 +79,6 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-> ⚠️ **Research and educational use only.** Any output produced by this software must be reviewed by a qualified professional before being flashed to a vehicle. The authors accept no liability for damage, loss, or legal consequences arising from its use. Read the full [DISCLAIMER](DISCLAIMER.md) before proceeding.
+> ⚠️ **Checksum verification is mandatory.** Before flashing any tuned binary to a vehicle, you **must** run it through a dedicated checksum correction tool (ECM Titanium, WinOLS, or equivalent). `openremap tune` confirms the recipe was applied correctly — it does **not** correct or validate ECU checksums. Flashing a binary with an incorrect checksum **will brick your ECU.**
+
+> ⚠️ **Research and educational use only.** Any output produced by this software must be reviewed by a qualified professional before being flashed to a vehicle. The authors accept no liability for damage, loss, or legal consequences arising from its use. Read the full [DISCLAIMER](DISCLAIMER.md).

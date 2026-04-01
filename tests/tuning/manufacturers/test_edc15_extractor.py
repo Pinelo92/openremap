@@ -1,5 +1,5 @@
 """
-Tests for BoschEDC15Extractor (EDC15C2 / EDC15C5 / EDC15C7 / EDC15M / EDC15VM+).
+Tests for BoschEDC15Extractor (EDC15C2 / EDC15C3 / EDC15C5 / EDC15C7 / EDC15M / EDC15VM+).
 
 Covers:
   - Identity properties: name, supported_families
@@ -44,8 +44,15 @@ import hashlib
 from openremap.tuning.manufacturers.bosch.edc15.extractor import BoschEDC15Extractor
 from openremap.tuning.manufacturers.bosch.edc15.patterns import (
     DETECTION_SIGNATURES,
+    EDC15_FORMAT_E_IDENT_RE,
+    EDC15_PP22_HEADER,
+    EDC15_PP22_SEARCH_LIMIT,
     EXCLUSION_SIGNATURES,
     EDC15_MIN_C3_RATIO,
+    VOLVO_CAL_ID_LENGTH,
+    VOLVO_CAL_ID_OFFSET,
+    VOLVO_IDENT_BLOCK_HEADER,
+    VOLVO_IDENT_BLOCK_OFFSET,
 )
 
 
@@ -81,6 +88,9 @@ SIZE_1MB = 1 * MB  # 0x100000 — dual-bank EDC15 bin
 TSW_STRING = b"TSW V2.40 280700 1718 C7/ESB/G40"
 TSW_STRING_SHORT = b"TSW V1.10 "  # minimal TSW anchor — just needs "TSW "
 
+# Volvo EDC15C3 (Format C) TSW string — different variant scheme
+TSW_STRING_VOLVO = b"TSW V0.80 080102 0950 15C11/G43/"
+
 EXTRACTOR = BoschEDC15Extractor()
 
 
@@ -106,9 +116,15 @@ class TestIdentity:
         families = " ".join(EXTRACTOR.supported_families).upper()
         assert "EDC15" in families
 
+    def test_edc15c3_in_supported_families(self):
+        assert "EDC15C3" in EXTRACTOR.supported_families
+
     def test_edc15c5_in_supported_families(self):
         families = " ".join(EXTRACTOR.supported_families).upper()
         assert "EDC15C5" in families or "EDC15" in families
+
+    def test_match_key_fallback_field_is_calibration_id(self):
+        assert EXTRACTOR.match_key_fallback_field == "calibration_id"
 
     def test_all_families_are_strings(self):
         for f in EXTRACTOR.supported_families:
@@ -926,16 +942,36 @@ class TestBuildMatchKey:
         assert key is not None
         assert "  " not in key
 
-    def test_no_fallback_for_edc15(self):
-        # EDC15 extractor does not declare match_key_fallback_field,
-        # so fallback_value must not be used even when explicitly passed.
+    def test_fallback_used_for_edc15_when_sw_absent(self):
+        # EDC15 extractor declares match_key_fallback_field = "calibration_id"
+        # to support Volvo EDC15C3 (Format C) bins where software_version is
+        # absent but a Volvo OEM calibration ID is available.
         key = EXTRACTOR.build_match_key(
             ecu_family="EDC15",
             software_version=None,
-            fallback_value="SOME_FALLBACK",
+            fallback_value="B341CS3200",
         )
-        # match_key_fallback_field is None on base class by default;
-        # EDC15 does not override it → key must be None.
+        # match_key_fallback_field is "calibration_id" → fallback is used.
+        assert key == "EDC15::B341CS3200"
+
+    def test_fallback_ignored_when_sw_present(self):
+        # When software_version IS present, the fallback must NOT be used
+        # even if a fallback_value is explicitly passed.
+        key = EXTRACTOR.build_match_key(
+            ecu_family="EDC15",
+            software_version="1037366536",
+            fallback_value="B341CS3200",
+        )
+        assert key == "EDC15::1037366536"
+
+    def test_fallback_none_when_no_sw_and_no_fallback_value(self):
+        # When both software_version and fallback_value are absent,
+        # the match key must be None.
+        key = EXTRACTOR.build_match_key(
+            ecu_family="EDC15",
+            software_version=None,
+            fallback_value=None,
+        )
         assert key is None
 
 
@@ -1106,3 +1142,646 @@ class TestCoverageEdc15ResolverEdges:
         software_version = "PREFIX0281010332SUFFIX"
         result = EXTRACTOR._resolve_hardware_number(raw_hits, software_version)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Format C — Volvo EDC15C3 ident block extraction
+# ---------------------------------------------------------------------------
+
+
+def _make_volvo_ident_block(
+    short_code: bytes = b"762",
+    separator: bytes = b"\x16\x0a\x00",
+    cal_id: bytes = b"B341CS3200",
+) -> bytes:
+    """Build a 28-byte Volvo ident block (header + short code + sep + cal ID + padding)."""
+    header = b"\x02\x04\x02\x0a\x00\x00"
+    padding = b"\x00" * 6
+    return header + short_code + separator + cal_id + padding
+
+
+def _make_format_c_bin(
+    cal_id: bytes = b"B341CS3200",
+    short_code: bytes = b"762",
+    tsw: bytes = TSW_STRING_VOLVO,
+    size: int = SIZE_512KB,
+    fill: int = 0xC3,
+) -> bytes:
+    """Build a synthetic Volvo EDC15C3 (Format C) binary.
+
+    - TSW string at 0x8000
+    - Volvo ident block at VOLVO_IDENT_BLOCK_OFFSET (0x7EC10)
+    - No 1037xxxxxx SW string anywhere
+    - No 0281xxxxxx HW string anywhere
+    - C3 fill byte throughout
+    """
+    buf = make_buf(size, fill=fill)
+    write(buf, 0x8000, tsw)
+    block = _make_volvo_ident_block(short_code=short_code, cal_id=cal_id)
+    write(buf, VOLVO_IDENT_BLOCK_OFFSET, block)
+    return bytes(buf)
+
+
+class TestFormatCDetection:
+    """can_handle() for Volvo EDC15C3 (Format C) binaries."""
+
+    def test_format_c_detected_via_tsw(self):
+        data = _make_format_c_bin()
+        assert EXTRACTOR.can_handle(data)
+
+    def test_format_c_detected_with_standard_tsw(self):
+        # Even a standard-style TSW triggers detection — Format C is
+        # distinguished at extraction time, not detection time.
+        data = _make_format_c_bin(tsw=TSW_STRING)
+        assert EXTRACTOR.can_handle(data)
+
+    def test_format_c_rejected_with_exclusion_signature(self):
+        buf = bytearray(_make_format_c_bin())
+        write(buf, 0x1000, b"EDC16")
+        assert not EXTRACTOR.can_handle(bytes(buf))
+
+
+class TestFormatCCalibrationId:
+    """Extract calibration_id from the Volvo ident block."""
+
+    def test_calibration_id_extracted(self):
+        data = _make_format_c_bin(cal_id=b"B341CS3200")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["calibration_id"] == "B341CS3200"
+
+    def test_calibration_id_different_value(self):
+        data = _make_format_c_bin(cal_id=b"B079EWS304")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["calibration_id"] == "B079EWS304"
+
+    def test_calibration_id_is_string(self):
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert isinstance(result["calibration_id"], str)
+
+    def test_calibration_id_length_is_10(self):
+        data = _make_format_c_bin(cal_id=b"ABCDEFGHIJ")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert len(result["calibration_id"]) == 10
+
+    def test_calibration_id_none_when_header_mismatch(self):
+        # If the header bytes at 0x7EC10 are not 02 04 02 0A, no cal ID.
+        buf = bytearray(_make_format_c_bin())
+        # Corrupt the header — overwrite with zeros
+        write(buf, VOLVO_IDENT_BLOCK_OFFSET, b"\x00\x00\x00\x00")
+        result = EXTRACTOR.extract(bytes(buf), "volvo.bin")
+        assert result["calibration_id"] is None
+
+    def test_calibration_id_none_when_non_ascii(self):
+        # If the 10-char cal ID contains non-printable bytes, reject.
+        data = _make_format_c_bin(cal_id=b"B341\xff\xfeS320")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["calibration_id"] is None
+
+    def test_calibration_id_none_when_all_digits(self):
+        # Pure digit cal ID is rejected (must have at least one letter).
+        data = _make_format_c_bin(cal_id=b"1234567890")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["calibration_id"] is None
+
+    def test_calibration_id_none_when_file_too_small(self):
+        # File smaller than the ident block offset — no cal ID extractable.
+        small = _make_format_c_bin(size=0x7EC00)  # ends before ident block
+        result = EXTRACTOR.extract(small, "small.bin")
+        assert result["calibration_id"] is None
+
+    def test_calibration_id_none_for_format_a_bin(self):
+        # A standard Format A binary should NOT produce a cal ID.
+        buf = make_buf(SIZE_512KB)
+        write(buf, 0x8000, TSW_STRING)
+        write(buf, 0x60000, b"1037366536")
+        result = EXTRACTOR.extract(bytes(buf), "alfa.bin")
+        assert result["calibration_id"] is None
+
+
+class TestFormatCSoftwareVersion:
+    """Format C bins have no 1037xxxxxx SW — software_version must be None."""
+
+    def test_software_version_none(self):
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["software_version"] is None
+
+    def test_hardware_number_none(self):
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["hardware_number"] is None
+
+
+class TestFormatCMatchKey:
+    """Match key uses calibration_id as fallback when SW is absent."""
+
+    def test_match_key_uses_calibration_id_fallback(self):
+        data = _make_format_c_bin(cal_id=b"B341CS3200")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["match_key"] == "EDC15::B341CS3200"
+
+    def test_match_key_format_family_double_colon_cal_id(self):
+        data = _make_format_c_bin(cal_id=b"B079EWS304")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert "::" in result["match_key"]
+        family, version = result["match_key"].split("::", 1)
+        assert family == "EDC15"
+        assert version == "B079EWS304"
+
+    def test_match_key_is_uppercase(self):
+        data = _make_format_c_bin(cal_id=b"b341cs3200")
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["match_key"] == result["match_key"].upper()
+
+    def test_match_key_none_when_no_sw_and_no_cal_id(self):
+        # No SW string AND ident block header corrupted → no cal ID → no key
+        buf = bytearray(_make_format_c_bin())
+        write(buf, VOLVO_IDENT_BLOCK_OFFSET, b"\x00\x00\x00\x00")
+        result = EXTRACTOR.extract(bytes(buf), "volvo.bin")
+        assert result["match_key"] is None
+
+    def test_match_key_prefers_sw_over_cal_id(self):
+        # If a Format C-style bin somehow also has a 1037 string, SW wins.
+        buf = bytearray(_make_format_c_bin(cal_id=b"B341CS3200"))
+        write(buf, 0x60000, b"1037360036")
+        result = EXTRACTOR.extract(bytes(buf), "volvo.bin")
+        assert result["software_version"] == "1037360036"
+        assert result["match_key"] == "EDC15::1037360036"
+
+    def test_different_cal_ids_produce_different_match_keys(self):
+        data1 = _make_format_c_bin(cal_id=b"B341CS3200")
+        data2 = _make_format_c_bin(cal_id=b"B079EWS304")
+        r1 = EXTRACTOR.extract(data1, "s60.bin")
+        r2 = EXTRACTOR.extract(data2, "v70.bin")
+        assert r1["match_key"] != r2["match_key"]
+
+
+class TestFormatCRequiredFields:
+    """Format C extracts still contain all required fields."""
+
+    def test_manufacturer_is_bosch(self):
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["manufacturer"] == "Bosch"
+
+    def test_ecu_family_is_edc15(self):
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["ecu_family"] == "EDC15"
+
+    def test_file_size_correct(self):
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["file_size"] == SIZE_512KB
+
+    def test_md5_present_and_valid(self):
+        import re as re_mod
+
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert re_mod.fullmatch(r"[0-9a-f]{32}", result["md5"])
+
+    def test_sha256_present_and_valid(self):
+        import re as re_mod
+
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert re_mod.fullmatch(r"[0-9a-f]{64}", result["sha256_first_64kb"])
+
+    def test_always_none_fields_still_none(self):
+        data = _make_format_c_bin()
+        result = EXTRACTOR.extract(data, "volvo.bin")
+        assert result["calibration_version"] is None
+        assert result["sw_base_version"] is None
+        assert result["serial_number"] is None
+        assert result["dataset_number"] is None
+        assert result["oem_part_number"] is None
+
+
+class TestFormatCDeterminism:
+    """Format C extraction is deterministic."""
+
+    def test_same_binary_same_result(self):
+        data = _make_format_c_bin()
+        r1 = EXTRACTOR.extract(data, "volvo.bin")
+        r2 = EXTRACTOR.extract(data, "volvo.bin")
+        assert r1 == r2
+
+    def test_filename_does_not_affect_cal_id(self):
+        data = _make_format_c_bin(cal_id=b"B341CS3200")
+        r1 = EXTRACTOR.extract(data, "Volvo S60.ori")
+        r2 = EXTRACTOR.extract(data, "unknown.bin")
+        assert r1["calibration_id"] == r2["calibration_id"]
+        assert r1["match_key"] == r2["match_key"]
+
+
+class TestFormatCVolvoIdentBlockConstants:
+    """Verify the Volvo ident block constants are self-consistent."""
+
+    def test_header_is_4_bytes(self):
+        assert len(VOLVO_IDENT_BLOCK_HEADER) == 4
+
+    def test_header_starts_with_0204(self):
+        assert VOLVO_IDENT_BLOCK_HEADER[:2] == b"\x02\x04"
+
+    def test_cal_id_offset_past_header(self):
+        # Cal ID must start after header + padding + short code + separator
+        assert VOLVO_CAL_ID_OFFSET >= len(VOLVO_IDENT_BLOCK_HEADER) + 2
+
+    def test_cal_id_length_is_10(self):
+        assert VOLVO_CAL_ID_LENGTH == 10
+
+    def test_block_offset_within_512kb(self):
+        assert VOLVO_IDENT_BLOCK_OFFSET < SIZE_512KB
+
+    def test_block_end_within_512kb(self):
+        block_end = VOLVO_IDENT_BLOCK_OFFSET + VOLVO_CAL_ID_OFFSET + VOLVO_CAL_ID_LENGTH
+        assert block_end <= SIZE_512KB
+
+
+# ---------------------------------------------------------------------------
+# Format D — early EDC15 VP37/VP44 with alphanumeric SW codes
+# ---------------------------------------------------------------------------
+
+
+def _make_format_d_bin(
+    hw: bytes = b"0281010082",
+    ident: bytes = (
+        b"3074906018C  2,5l R5 EDC  SG  2520 28SA4060"
+        b" 0281010082 EBETT200HEX074906018C  0399 "
+    ),
+    ident_offset: int = 0x76BA9,
+    hw_offset: int = 0x10046,
+    size: int = SIZE_512KB,
+    c3_end: int = 0x33000,
+) -> bytes:
+    """Build a synthetic early EDC15 VP37/VP44 (Format D) binary.
+
+    - 0xC3 fill in [0, c3_end) to achieve >= 5% ratio
+    - HW at fixed offset 0x10046
+    - Structured ident block at ident_offset
+    - No TSW string, no 1037xxxxxx SW string
+    """
+    buf = make_buf(size)
+    fill_region(buf, 0, c3_end, 0xC3)
+    write(buf, hw_offset, hw)
+    write(buf, ident_offset, ident)
+    return bytes(buf)
+
+
+class TestCanHandleFormatD:
+    """can_handle() for early EDC15 VP37/VP44 (Format D) binaries."""
+
+    def test_format_d_basic_detected(self):
+        data = _make_format_d_bin()
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_d_without_c3_fill_rejected(self):
+        # Same ident block but no C3 fill → rejected
+        buf = make_buf(SIZE_512KB)
+        write(buf, 0x10046, b"0281010082")
+        ident = (
+            b"3074906018C  2,5l R5 EDC  SG  2520 28SA4060"
+            b" 0281010082 EBETT200HEX074906018C  0399 "
+        )
+        write(buf, 0x76BA9, ident)
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_d_without_ident_block_rejected(self):
+        # C3 fill present but no ident block → rejected
+        buf = make_buf(SIZE_512KB)
+        fill_region(buf, 0, 0x33000, 0xC3)
+        write(buf, 0x10046, b"0281010082")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_d_with_exclusion_signature_rejected(self):
+        # EDC17 exclusion blocks even Format D
+        buf = bytearray(_make_format_d_bin())
+        write(buf, 0x2000, b"EDC17")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+
+class TestExtractFormatD:
+    """extract() for early EDC15 VP37/VP44 (Format D) binaries."""
+
+    def setup_method(self):
+        self.data = _make_format_d_bin()
+        self.result = EXTRACTOR.extract(self.data, "vw_t4.bin")
+
+    def test_manufacturer_is_bosch(self):
+        assert self.result["manufacturer"] == "Bosch"
+
+    def test_ecu_family_is_edc15(self):
+        assert self.result["ecu_family"] == "EDC15"
+
+    def test_hardware_number_extracted(self):
+        assert self.result["hardware_number"] == "0281010082"
+
+    def test_software_version_is_alpha_code(self):
+        assert self.result["software_version"] == "EBETT200"
+
+    def test_oem_part_number_extracted(self):
+        assert self.result["oem_part_number"] == "074906018C"
+
+    def test_match_key_built(self):
+        assert self.result["match_key"] is not None
+
+    def test_match_key_contains_sw(self):
+        assert "EBETT200" in self.result["match_key"]
+
+    def test_match_key_contains_edc15(self):
+        assert "EDC15" in self.result["match_key"]
+
+    def test_file_size_is_512kb(self):
+        assert self.result["file_size"] == 0x80000
+
+    def test_all_required_keys_present(self):
+        expected_keys = {
+            "manufacturer",
+            "file_size",
+            "md5",
+            "sha256_first_64kb",
+            "ecu_family",
+            "ecu_variant",
+            "software_version",
+            "hardware_number",
+            "calibration_id",
+            "calibration_version",
+            "sw_base_version",
+            "serial_number",
+            "dataset_number",
+            "oem_part_number",
+            "match_key",
+        }
+        assert expected_keys.issubset(self.result.keys())
+
+
+class TestFormatDVariants:
+    """Format D detection and extraction with varied ident block content."""
+
+    def test_different_alpha_sw_code(self):
+        ident = (
+            b"3074906018C  2,5l R5 EDC  SG  2520 28SA4060"
+            b" 0281010082 EBEWU100HEX074906018C  0399 "
+        )
+        data = _make_format_d_bin(ident=ident)
+        assert EXTRACTOR.can_handle(data) is True
+        result = EXTRACTOR.extract(data, "vw_golf.bin")
+        assert result["software_version"] == "EBEWU100"
+
+    def test_different_hw_number(self):
+        ident = (
+            b"3074906018C  2,5l R5 EDC  SG  2520 28SA4060"
+            b" 0281001979 EBETT200HEX074906018C  0399 "
+        )
+        data = _make_format_d_bin(hw=b"0281001979", ident=ident)
+        assert EXTRACTOR.can_handle(data) is True
+        result = EXTRACTOR.extract(data, "vw_t4.bin")
+        assert result["hardware_number"] == "0281001979"
+
+
+# ---------------------------------------------------------------------------
+# Format E — EDC15 C167 with PP22 header, low C3 fill
+# ---------------------------------------------------------------------------
+
+
+def _make_format_e_bin(
+    hw: bytes = b"0281010176",
+    sw: bytes = b"1037350953",
+    edc_ident: bytes = (
+        b"038906019BJ 1,9l R4 EDC  SG  0812 0281010176 F8DJT600   038906019BJ 0399 "
+    ),
+    pp22_offset: int = 4,
+    sw_offset: int = 0x50022,
+    edc_ident_offset: int = 0x35E7,
+    size: int = SIZE_512KB,
+    c3_start: int = 0x70000,
+    c3_end: int = 0x76000,
+    include_pp22: bool = True,
+    include_hw: bool = True,
+    include_sw: bool = True,
+    include_edc_ident: bool = True,
+) -> bytes:
+    """Build a synthetic EDC15 Format E binary.
+
+    Format E characteristics:
+      - PP22..00 header (Bosch C167 flash bootstrap) at pp22_offset
+      - 0281xxxxxx HW number in the EDC ident block
+      - 1037xxxxxx SW version at sw_offset
+      - Structured EDC ident block at edc_ident_offset
+      - C3 fill ratio below 5% (Format B threshold)
+      - No TSW string, no EBXXX alpha SW codes
+    """
+    buf = make_buf(size, fill=0xFF)
+    # Add some C3 fill (below 5% threshold)
+    fill_region(buf, c3_start, c3_end, 0xC3)
+    # PP22 header
+    if include_pp22:
+        # Preamble 'UU\x00\x00' then PP22..00
+        write(buf, pp22_offset - 4, b"UU\x00\x00")
+        write(buf, pp22_offset, b"PP22..00")
+    # EDC ident block (contains HW inline)
+    if include_edc_ident:
+        write(buf, edc_ident_offset, edc_ident)
+    # Standalone HW (also embed outside ident for HW resolver)
+    if include_hw:
+        write(buf, 0x7C000, b"\xc3\xc3" + hw + b"\xc3\xc3")
+    # SW version
+    if include_sw:
+        write(buf, sw_offset, b"aa005500EEWW88DD" + sw)
+    return bytes(buf)
+
+
+class TestCanHandleFormatE:
+    """
+    Format E detection: PP22..00 header + 0281 HW + (1037 SW or EDC ident).
+
+    These are EDC15 C167-based bins whose C3 fill ratio (4.1–4.6%) falls
+    just below the Format B 5% threshold.  The PP22..00 header is unique
+    to Bosch EDC15 C167 flash and never appears in Siemens PPD/Simos files.
+    """
+
+    def test_format_e_basic_detected(self):
+        data = _make_format_e_bin()
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_e_pp22_at_offset_4(self):
+        """PP22 at its most common position (offset 4, after UU preamble)."""
+        data = _make_format_e_bin(pp22_offset=4)
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_e_pp22_at_0x8004(self):
+        """PP22 at second flash bank header (0x8004)."""
+        data = _make_format_e_bin(pp22_offset=0x8004)
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_e_pp22_at_0x78004(self):
+        """PP22 at last flash bank header — matches VW Lupo layout."""
+        data = _make_format_e_bin(pp22_offset=0x78004)
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_e_without_pp22_rejected(self):
+        """Without PP22 header, Format E should not trigger."""
+        data = _make_format_e_bin(include_pp22=False)
+        # C3 ratio is below 5% so Format B won't fire either
+        assert EXTRACTOR.can_handle(data) is False
+
+    def test_format_e_without_hw_rejected(self):
+        """PP22 present but no 0281 HW → rejected."""
+        data = _make_format_e_bin(include_hw=False, include_edc_ident=False)
+        assert EXTRACTOR.can_handle(data) is False
+
+    def test_format_e_without_sw_but_with_edc_ident_accepted(self):
+        """PP22 + HW + EDC ident block (no 1037 SW) → accepted."""
+        data = _make_format_e_bin(include_sw=False)
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_e_with_sw_but_without_edc_ident_accepted(self):
+        """PP22 + HW + 1037 SW (no EDC ident block) → accepted."""
+        data = _make_format_e_bin(include_edc_ident=False)
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_e_without_sw_and_without_edc_ident_rejected(self):
+        """PP22 + HW but no SW and no EDC ident → rejected."""
+        data = _make_format_e_bin(include_sw=False, include_edc_ident=False)
+        assert EXTRACTOR.can_handle(data) is False
+
+    def test_format_e_with_exclusion_edc17_rejected(self):
+        """PP22 present but EDC17 exclusion signature → rejected in Phase 1."""
+        buf = bytearray(_make_format_e_bin())
+        write(buf, 0x1000, b"EDC17")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_e_with_exclusion_ppd_rejected(self):
+        """PP22 present but PPD exclusion signature → rejected (Siemens guard)."""
+        buf = bytearray(_make_format_e_bin())
+        write(buf, 0x2000, b"PPD")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_e_with_exclusion_5wp_rejected(self):
+        """PP22 present but 5WP exclusion signature → rejected (Siemens guard)."""
+        buf = bytearray(_make_format_e_bin())
+        write(buf, 0x2000, b"5WP")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_e_with_exclusion_simos_rejected(self):
+        """PP22 present but SIMOS exclusion signature → rejected (Siemens guard)."""
+        buf = bytearray(_make_format_e_bin())
+        write(buf, 0x2000, b"SIMOS")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_e_with_exclusion_simos_mixed_case_rejected(self):
+        """PP22 present but Simos exclusion signature → rejected."""
+        buf = bytearray(_make_format_e_bin())
+        write(buf, 0x2000, b"Simos")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_format_e_different_hw_number(self):
+        """Format E with a different 0281 HW number."""
+        edc_ident = (
+            b"038906019H  1,9l R4 EDC  SG  0704 0281001910 F8BWV200HVX038906019H  1198 "
+        )
+        data = _make_format_e_bin(
+            hw=b"0281001910",
+            sw=b"1037350172",
+            edc_ident=edc_ident,
+        )
+        assert EXTRACTOR.can_handle(data) is True
+
+    def test_format_e_r3_edc_ident_variant(self):
+        """Format E with R3 (3-cylinder) EDC ident — e.g. Lupo 1.2 TDI."""
+        edc_ident = (
+            b"045906019Q  1,2l R3 EDC  DS  0904 0281010258 F8EGJ300   045906019Q  0999 "
+        )
+        data = _make_format_e_bin(
+            hw=b"0281010258",
+            sw=b"1037352679",
+            edc_ident=edc_ident,
+            pp22_offset=0x78004,
+        )
+        assert EXTRACTOR.can_handle(data) is True
+
+
+class TestExtractFormatE:
+    """Extraction tests for Format E bins — verify HW, SW, match_key."""
+
+    def setup_method(self):
+        self.data = _make_format_e_bin()
+        self.result = EXTRACTOR.extract(self.data, "vw_audi_edc15.bin")
+
+    def test_manufacturer_is_bosch(self):
+        assert self.result["manufacturer"] == "Bosch"
+
+    def test_ecu_family_is_edc15(self):
+        assert self.result["ecu_family"] == "EDC15"
+
+    def test_hardware_number_extracted(self):
+        assert self.result["hardware_number"] == "0281010176"
+
+    def test_software_version_extracted(self):
+        assert self.result["software_version"] == "1037350953"
+
+    def test_match_key_built(self):
+        assert self.result["match_key"] is not None
+
+    def test_match_key_contains_sw(self):
+        assert "1037350953" in self.result["match_key"]
+
+    def test_match_key_contains_edc15(self):
+        assert "EDC15" in self.result["match_key"]
+
+    def test_file_size_is_512kb(self):
+        assert self.result["file_size"] == SIZE_512KB
+
+    def test_all_required_keys_present(self):
+        required = [
+            "manufacturer",
+            "file_size",
+            "md5",
+            "sha256_first_64kb",
+            "ecu_family",
+            "ecu_variant",
+            "software_version",
+            "hardware_number",
+            "calibration_id",
+            "calibration_version",
+            "sw_base_version",
+            "serial_number",
+            "dataset_number",
+            "oem_part_number",
+            "match_key",
+        ]
+        for key in required:
+            assert key in self.result, f"Missing required key: {key}"
+
+
+class TestFormatEConstants:
+    """Verify the Format E pattern constants are well-formed."""
+
+    def test_pp22_header_is_bytes(self):
+        assert isinstance(EDC15_PP22_HEADER, bytes)
+
+    def test_pp22_header_value(self):
+        assert EDC15_PP22_HEADER == b"PP22..00"
+
+    def test_pp22_search_limit_covers_full_512kb(self):
+        assert EDC15_PP22_SEARCH_LIMIT >= 0x80000
+
+    def test_pp22_search_limit_is_int(self):
+        assert isinstance(EDC15_PP22_SEARCH_LIMIT, int)
+
+    def test_format_e_ident_re_is_bytes(self):
+        assert isinstance(EDC15_FORMAT_E_IDENT_RE, bytes)
+
+    def test_ppd_in_exclusion_signatures(self):
+        assert b"PPD" in EXCLUSION_SIGNATURES
+
+    def test_5wp_in_exclusion_signatures(self):
+        assert b"5WP" in EXCLUSION_SIGNATURES
+
+    def test_simos_upper_in_exclusion_signatures(self):
+        assert b"SIMOS" in EXCLUSION_SIGNATURES
+
+    def test_simos_mixed_in_exclusion_signatures(self):
+        assert b"Simos" in EXCLUSION_SIGNATURES

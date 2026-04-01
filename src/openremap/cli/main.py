@@ -1,7 +1,14 @@
 """
 OpenRemap CLI — root entry point.
 
+Dispatching rules:
+    openremap                          → launches the TUI
+    openremap --help                   → CLI help
+    openremap --version                → version string
+    openremap <command> [args...]      → CLI command
+
 Usage:
+    openremap
     openremap --help
     openremap --version
     openremap commands
@@ -19,6 +26,7 @@ Usage:
     openremap scan ./my_bins/ --move --organize
 """
 
+import sys
 from importlib.metadata import version as _get_version
 from typing import Optional
 
@@ -143,5 +151,26 @@ app.command(
 )(scan)
 
 
+# ---------------------------------------------------------------------------
+# Smart dispatcher — bare `openremap` → TUI, anything else → CLI
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    """Entry point for the ``openremap`` console script.
+
+    When invoked with no arguments the TUI is launched.  Any arguments or
+    flags (``--help``, ``--version``, subcommands, etc.) are forwarded to
+    the Typer CLI app as before.
+    """
+    if len(sys.argv) == 1:
+        # No arguments at all → launch the TUI
+        from openremap.tui.main import run as _run_tui
+
+        _run_tui()
+    else:
+        app()
+
+
 if __name__ == "__main__":
-    app()
+    main()

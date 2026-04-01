@@ -10,7 +10,7 @@ package = true
 
 [project]
 name = "openremap"
-version = "0.3.1"
+version = "0.4.0"
 description = "ECU binary analysis and patching toolkit — diff, validate, and apply tuning recipes to automotive ECU binaries."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -33,10 +33,12 @@ dependencies = [
     "typer>=0.15.0",
     "rarfile>=4.2",
     "pydantic>=2",
+    "textual>=0.80",
 ]
 
 [project.scripts]
-openremap = "openremap.cli.main:app"
+openremap     = "openremap.cli.main:main"
+openremap-tui = "openremap.tui.main:run"
 
 [project.urls]
 Homepage = "https://github.com/Pinelo92/openremap"

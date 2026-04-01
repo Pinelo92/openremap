@@ -42,8 +42,11 @@ from typing import List
 
 # ---------------------------------------------------------------------------
 # ECU families known to embed a canonical Bosch SW version in the binary.
-# "Canonical" covers both the standard "1037" prefix (VW/Audi/BMW/Alfa/Opel)
-# and the PSA/Peugeot-Citroën "1039" prefix (EDC16C34 and related variants).
+# "Canonical" covers the standard "1037" prefix (VW/Audi/BMW/Alfa/Opel),
+# the PSA/Peugeot-Citroën "1039" prefix (EDC16C34 and related variants),
+# the Italian-market ME7.3 "1277" prefix (Ferrari 360, possibly Alfa
+# Romeo / Maserati), and the older Bosch Motronic prefixes "1267", "2227",
+# and "2537" used across the M3.x / M4.x generations (Volvo, BMW, Audi).
 # When software_version is None for one of these families the "IDENT BLOCK
 # MISSING" warning is raised, because absence is abnormal for that platform.
 # ---------------------------------------------------------------------------
@@ -61,10 +64,11 @@ _1037_FAMILY_PREFIXES: tuple[str, ...] = (
     "ME7",
     "ME3",
     "ME5",
-    "M1X",
-    "M2X",
-    "M3X",
-    "M5X",
+    "M1.",  # M1.3, M1.7, M1.55, M1.5.5, M1.x, M1.x-early
+    "M2.",  # M2.1, M2.5 (Audi V8 / Porsche 964)
+    "M3.",  # M3.1, M3.3, M3.8x
+    "M4.",  # M4.3, M4.4 (Volvo 850 / 960 / S70 / V70 / S60 / S80)
+    "M5.",  # M5.2, M5.4
 )
 
 # ---------------------------------------------------------------------------
@@ -231,11 +235,9 @@ def score_identity(identity: dict, filename: str = "unknown.bin") -> ConfidenceR
 
     # ── Software version ────────────────────────────────────────────────────
     if sw:
-        if sw.startswith(("1037", "1039")):
+        if sw.startswith(("1037", "1039", "1267", "1277", "2227", "2537")):
             score += 40
-            signals.append(
-                ConfidenceSignal(+40, "canonical SW version (1037/1039-prefixed)")
-            )
+            signals.append(ConfidenceSignal(+40, "canonical SW version"))
         else:
             score += 15
             signals.append(ConfidenceSignal(+15, f"SW version present ({sw[:12]})"))

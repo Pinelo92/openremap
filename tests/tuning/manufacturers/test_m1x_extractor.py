@@ -1,5 +1,5 @@
 """
-Tests for BoschM1xExtractor (M1.3 / M1.7 / M1.x generic).
+Tests for BoschM1xExtractor (M1.3 / M1.7 / M1.8 / M1.x generic).
 
 Covers:
   - Identity: name, supported_families, repr
@@ -7,10 +7,13 @@ Covers:
       * Primary detection: ROM header magic \\x85\\x0a\\xf0\\x30 at offset 0
       * Phase 2b fallback: M1.7 family marker + valid reversed-digit ident (no magic)
       * Phase 2b fallback: M1.3 family marker + valid reversed-digit ident
+      * Phase 2d: M1.8 (Volvo) — '"0000000M0.0' marker + 'M1.8' string
   - can_handle() — False paths:
       * 512-byte binary (wrong size, no magic)
       * All-zero 32KB binary (right size, no magic, no valid ident)
       * Binary with M1.x magic + exclusion signature (phase 1 rejects)
+      * M0.0 marker only (without M1.8 string) — rejected
+      * M1.8 string only (without M0.0 marker) — rejected
   - extract():
       * Required keys all present
       * manufacturer == 'Bosch'
@@ -19,6 +22,12 @@ Covers:
       * ecu_family in supported_families or a known sub-variant string
       * file_size == len(data)
       * sha256_first_64kb matches hashlib
+  - M1.8 extract():
+      * ecu_family == 'M1.8'
+      * oem_part_number extracted from ident digit sequence (Volvo part)
+      * match_key uses digit sequence as fingerprint
+      * calibration_id == variant code (e.g. 'E00')
+      * calibration_version == revision (e.g. '0000')
   - Determinism and filename independence
 """
 
@@ -97,6 +106,64 @@ def make_m17_family_marker_bin() -> bytes:
     return bytes(buf)
 
 
+def make_m18_bin() -> bytes:
+    """
+    32KB M1.8 (Volvo) binary with '"0000000M0.0' marker and M1.8 ident block.
+
+    Detection relies on Phase 2d: '"0000000M0.0' family marker present
+    AND 'M1.8' ASCII string present AND size is 32KB.
+
+    Ident block at 0x7EA0:
+      "E00M18     928618124110227400035M1.8  0000"
+    """
+    buf = bytearray(0x8000)
+    # 8051 LJMP header — NOT the HC11 magic
+    buf[0:3] = b"\x02\x0f\x00"
+    buf[3:6] = b"\x02\x07\x3f"
+
+    # '"0000000M0.0' family marker at ~0x6249 (upper ROM)
+    marker = b'"0000000M0.0 u'
+    buf[0x6249 : 0x6249 + len(marker)] = marker
+
+    # M1.8 ident block at 0x7EA0
+    ident = b"E00M18     928618124110227400035M1.8  0000"
+    buf[0x7EA0 : 0x7EA0 + len(ident)] = ident
+
+    return bytes(buf)
+
+
+def make_m18_marker_only_bin() -> bytes:
+    """
+    32KB binary with '"0000000M0.0' marker but NO 'M1.8' string.
+
+    Should NOT be claimed by M1.8 detection — requires both anchors.
+    """
+    buf = bytearray(0x8000)
+    buf[0:3] = b"\x02\x0f\x00"
+
+    marker = b'"0000000M0.0 u'
+    buf[0x6249 : 0x6249 + len(marker)] = marker
+
+    # No M1.8 ident block
+    return bytes(buf)
+
+
+def make_m18_string_only_bin() -> bytes:
+    """
+    32KB binary with 'M1.8' string but NO '"0000000M0.0' marker.
+
+    Should NOT be claimed by M1.8 detection — requires both anchors.
+    """
+    buf = bytearray(0x8000)
+    buf[0:3] = b"\x02\x0f\x00"
+
+    # M1.8 string but no M0.0 marker
+    ident = b"E00M18     928618124110227400035M1.8  0000"
+    buf[0x7EA0 : 0x7EA0 + len(ident)] = ident
+
+    return bytes(buf)
+
+
 def make_m13_family_marker_bin() -> bytes:
     """
     32KB M1.3 binary WITHOUT the HC11 header magic.
@@ -145,6 +212,9 @@ class TestIdentity:
     def test_m13_in_supported_families(self):
         assert "M1.3" in EXTRACTOR.supported_families
 
+    def test_m18_in_supported_families(self):
+        assert "M1.8" in EXTRACTOR.supported_families
+
     def test_all_families_are_strings(self):
         for f in EXTRACTOR.supported_families:
             assert isinstance(f, str), f"Family {f!r} is not a string"
@@ -173,6 +243,10 @@ class TestCanHandleTrue:
     def test_m13_family_marker_fallback_accepted(self):
         """Phase 2b: M1.3 family marker + valid ident (no magic)."""
         assert EXTRACTOR.can_handle(make_m13_family_marker_bin()) is True
+
+    def test_m18_volvo_bin_accepted(self):
+        """Phase 2d: M0.0 marker + M1.8 string → M1.8 detection fires."""
+        assert EXTRACTOR.can_handle(make_m18_bin()) is True
 
     def test_64kb_binary_with_magic_accepted(self):
         """Magic at offset 0 in a 64KB file — also a valid M1.x size."""
@@ -249,6 +323,20 @@ class TestCanHandleFalse:
         buf[0:4] = b"\x85\x0a\xf0\x30"
         buf[0x6000:0x600B] = b'"0000000M2.'
         assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_m18_marker_only_rejected(self):
+        """
+        M0.0 marker present but no M1.8 string → Phase 2d does not fire.
+        The dual-anchor requirement prevents false positives.
+        """
+        assert EXTRACTOR.can_handle(make_m18_marker_only_bin()) is False
+
+    def test_m18_string_only_rejected(self):
+        """
+        M1.8 string present but no M0.0 marker → Phase 2d does not fire.
+        The dual-anchor requirement prevents false positives.
+        """
+        assert EXTRACTOR.can_handle(make_m18_string_only_bin()) is False
 
     def test_wrong_size_128kb_rejected(self):
         """
@@ -396,6 +484,129 @@ class TestExtractMatchKey:
         mk = result["match_key"]
         assert mk is not None
         assert "M1" in mk.upper()
+
+
+# ---------------------------------------------------------------------------
+# M1.8 (Volvo) extraction tests
+# ---------------------------------------------------------------------------
+
+
+class TestM18Extract:
+    """M1.8 extraction uses a completely different path from M1.3/M1.7."""
+
+    def setup_method(self):
+        self.data = make_m18_bin()
+        self.result = EXTRACTOR.extract(self.data)
+
+    def test_all_required_keys_present(self):
+        for key in REQUIRED_EXTRACT_KEYS:
+            assert key in self.result, f"Missing required key: {key!r}"
+
+    def test_manufacturer_is_bosch(self):
+        assert self.result["manufacturer"] == "Bosch"
+
+    def test_ecu_family_is_m18(self):
+        assert self.result["ecu_family"] == "M1.8"
+
+    def test_ecu_variant_is_m18(self):
+        assert self.result["ecu_variant"] == "M1.8"
+
+    def test_oem_part_number_is_volvo_part(self):
+        """First 7 digits of ident digit sequence = Volvo part 9286181."""
+        assert self.result["oem_part_number"] == "9286181"
+
+    def test_hardware_number_is_none(self):
+        """M1.8 does not store 10-digit HW as ASCII in the binary."""
+        assert self.result["hardware_number"] is None
+
+    def test_software_version_is_none(self):
+        """M1.8 does not store 10-digit SW as ASCII in the binary."""
+        assert self.result["software_version"] is None
+
+    def test_calibration_id_is_variant_code(self):
+        """Variant code 'E00' from the ident block prefix."""
+        assert self.result["calibration_id"] == "E00"
+
+    def test_calibration_version_is_revision(self):
+        """Revision '0000' from the ident block suffix."""
+        assert self.result["calibration_version"] == "0000"
+
+    def test_match_key_contains_m18(self):
+        mk = self.result["match_key"]
+        assert mk is not None
+        assert "M1.8" in mk
+
+    def test_match_key_contains_digit_sequence(self):
+        mk = self.result["match_key"]
+        assert mk is not None
+        assert "928618124110227400035" in mk
+
+    def test_match_key_format(self):
+        """Match key is 'M1.8::<digit_sequence>'."""
+        assert self.result["match_key"] == "M1.8::928618124110227400035"
+
+    def test_file_size_is_32kb(self):
+        assert self.result["file_size"] == 0x8000
+
+    def test_sha256_first_64kb_matches_hashlib(self):
+        expected = hashlib.sha256(self.data[:0x10000]).hexdigest()
+        assert self.result["sha256_first_64kb"] == expected
+
+
+class TestM18CanHandleEdgeCases:
+    """Edge cases for M1.8 detection (Phase 2d)."""
+
+    def test_m18_with_exclusion_signature_rejected(self):
+        """Phase 1 exclusion overrides Phase 2d M1.8 detection."""
+        buf = bytearray(make_m18_bin())
+        buf[0x0100:0x0106] = b"EDC17\x00"
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_m18_wrong_size_rejected(self):
+        """M1.8 detection requires 32KB or 64KB."""
+        buf = bytearray(0x20000)  # 128KB — too large
+        marker = b'"0000000M0.0 u'
+        buf[0x6249 : 0x6249 + len(marker)] = marker
+        ident = b"E00M18     928618124110227400035M1.8  0000"
+        buf[0x7EA0 : 0x7EA0 + len(ident)] = ident
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_m18_64kb_accepted(self):
+        """M1.8 detection also works for 64KB files."""
+        buf = bytearray(0x10000)  # 64KB
+        marker = b'"0000000M0.0 u'
+        buf[0x6249 : 0x6249 + len(marker)] = marker
+        ident = b"E00M18     928618124110227400035M1.8  0000"
+        buf[0x7EA0 : 0x7EA0 + len(ident)] = ident
+        assert EXTRACTOR.can_handle(bytes(buf)) is True
+
+    def test_m18_extract_with_different_variant_code(self):
+        """M1.8 ident with variant code E01 instead of E00."""
+        buf = bytearray(0x8000)
+        buf[0:3] = b"\x02\x0f\x00"
+        marker = b'"0000000M0.0 u'
+        buf[0x6249 : 0x6249 + len(marker)] = marker
+        ident = b"E01M18     123456789012345678901M1.8  0042"
+        buf[0x7EA0 : 0x7EA0 + len(ident)] = ident
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["ecu_family"] == "M1.8"
+        assert result["calibration_id"] == "E01"
+        assert result["calibration_version"] == "0042"
+        assert result["oem_part_number"] == "1234567"
+        assert result["match_key"] == "M1.8::123456789012345678901"
+
+    def test_m18_extract_without_ident_match(self):
+        """M1.8 bin where the ident regex does not match — graceful fallback."""
+        buf = bytearray(0x8000)
+        buf[0:3] = b"\x02\x0f\x00"
+        marker = b'"0000000M0.0 u'
+        buf[0x6249 : 0x6249 + len(marker)] = marker
+        # M1.8 string present (required for can_handle) but no structured ident
+        buf[0x7F00:0x7F04] = b"M1.8"
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["ecu_family"] == "M1.8"
+        assert result["oem_part_number"] is None
+        assert result["match_key"] is None
 
 
 # ---------------------------------------------------------------------------

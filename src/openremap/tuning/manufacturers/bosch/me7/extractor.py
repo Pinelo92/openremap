@@ -22,7 +22,7 @@ binary structure from the newer EDC17/MEDC17 generation:
   - No SB_V, NR000, Customer. or EDC17 strings
   - ZZ marker at 0x10000 (variant byte differs by sub-family, see below)
   - HW number always starts with 0261 (10 digits total)  [production only]
-  - SW version always starts with 1037 (10–11 digits total)  [production only]
+  - SW version starts with 1037 or 1277 (10–11 digits)  [production only]
   - HW and SW are stored as a concatenated ASCII block in the ident region
   - MOTRONIC label carries the VAG OEM part number and family string
 
@@ -53,7 +53,7 @@ from openremap.tuning.manufacturers.bosch.me7.patterns import (
 class BoschME7Extractor(BaseManufacturerExtractor):
     """
     Extractor for Bosch Motronic ME7 ECU binaries.
-    Handles: ME71, ME7.1, ME7.1.1, ME7.5, ME7.5.5, ME7.5.10
+    Handles: ME7, ME7.0, ME71, ME7.1, ME7.1.1, ME7.5, ME7.5.5, ME7.5.10
     """
 
     # -----------------------------------------------------------------------
@@ -67,11 +67,14 @@ class BoschME7Extractor(BaseManufacturerExtractor):
     @property
     def supported_families(self) -> List[str]:
         return [
+            "ME7",
+            "ME7.0",
             "ME7early",
             "ME71",
             "ME731",
             "ME7.1",
             "ME7.1.1",
+            "ME7.3",
             "ME7.5",
             "ME7.5.5",
             "ME7.5.10",
@@ -153,8 +156,20 @@ class BoschME7Extractor(BaseManufacturerExtractor):
             if excl in search_area:
                 return False
 
-        # Phase 2 — accept on any ME7 string signature (full-file scan)
-        if any(sig in search_area for sig in DETECTION_SIGNATURES):
+        # Phase 2a — accept on specific ME7 family signatures
+        # "ME 7." (with space) covers early Volvo ME 7.0 bins where the
+        # family token is stored as "ME 7.0" in a Volvo OEM metadata field
+        # rather than the standard "ME7.x" format.  These bins (e.g. Volvo
+        # S60 2.0T 163HP, 1MB, ~2000 era) lack the ZZ block at 0x10000 and
+        # have no MOTRONIC label — this string is the only reliable anchor.
+        me7_specific = [b"ME7.", b"ME 7.", b"ME71", b"ME731"]
+        if any(sig in search_area for sig in me7_specific):
+            return True
+
+        # Phase 2b — MOTRONIC label is present, but only accept if ME7 family
+        # is also present.  "MOTRONIC" alone appears in other Bosch families
+        # (MP9, M1.5.4, etc.) that should not be claimed by this extractor.
+        if b"MOTRONIC" in search_area and b"ME7" in search_area:
             return True
 
         # Phase 3 — accept on ZZ prefix at its fixed ident-block offset only.
@@ -616,7 +631,7 @@ class BoschME7Extractor(BaseManufacturerExtractor):
             # Each hit is stored as "HW[optional-null]SW" — strip null and split
             for hit in combined_hits:
                 clean = hit.replace("\x00", "")
-                m = re.match(r"^(0261\d{6})(1037\d{6,10})$", clean)
+                m = re.match(r"^(0261\d{6})\s*((?:1037|1277)\d{6,10})$", clean)
                 if m:
                     return m.group(1)
 
@@ -631,6 +646,8 @@ class BoschME7Extractor(BaseManufacturerExtractor):
         Resolve the software version string (e.g. "1037368072", "10373686044").
 
         All ME7 SW versions start with "1037" and are 10–11 digits total.
+        ME7.3 Italian variants (Ferrari, possibly Alfa Romeo/Maserati) use
+        the "1277" prefix instead of "1037".
 
         Priority:
           1. Combined HW+SW block — group 2 of hw_sw_combined match.
@@ -647,7 +664,7 @@ class BoschME7Extractor(BaseManufacturerExtractor):
         if combined_hits:
             for hit in combined_hits:
                 clean = hit.replace("\x00", "")
-                m = re.match(r"^(0261\d{6})(1037\d{6,10})$", clean)
+                m = re.match(r"^(0261\d{6})\s*((?:1037|1277)\d{6,10})$", clean)
                 if m:
                     sw = m.group(2)
                     if sw not in candidates:

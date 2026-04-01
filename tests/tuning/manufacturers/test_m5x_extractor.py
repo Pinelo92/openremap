@@ -1,5 +1,5 @@
 """
-Tests for BoschM5xExtractor (M5.9 / M5.92 / M3.8 / M3.82 / M3.83 / M3.8.3).
+Tests for BoschM5xExtractor (M5.9 / M5.92 / M3.8 / M3.81 / M3.82 / M3.83 / M3.8.1 / M3.8.3).
 
 Covers:
   - Identity: name, supported_families, repr
@@ -144,9 +144,91 @@ _M383_ALT_HW = "0261206518"
 _M383_ALT_SW = "1037352127"  # raw[:10], strips last 2 ("57")
 _M383_ALT_OEM = "06A906018CG"
 
+# M3.83 — Format B (MOTR HS, clean OEM, 256KB) with V04 revision code
+_M383_V04_IDENT = (
+    b"06A906018BT 1.8L R4/5VT MOTR HS V04"
+    b"0261204683"
+    b"103735817156"  # true SW = "1037358171"
+    b"/1/M3.83/381/4518S1"
+)
+_M383_V04_HW = "0261204683"
+_M383_V04_SW = "1037358171"
+_M383_V04_OEM = "06A906018BT"
+
 # Phase 4 ident — family "M6.9": not M5.x or M3.8x so no primary sig fires,
 # but ident_block regex still matches ([A-Z0-9][0-9.]{2,6} matches "M6.9").
 _PHASE4_IDENT = b"MOTR    D060261204258103735026955/1/M6.9/05/400201"
+
+# ---------------------------------------------------------------------------
+# Format C / D reference ident strings (VR6 / MK3 / Passat V5)
+# ---------------------------------------------------------------------------
+
+# M5.9 — Format C (MOTRONIC keyword, 512KB, Golf MK3 2.0 ABA)
+_M59_FC_IDENT = (
+    b"037906259   MOTRONIC M5.9       V07"
+    b"0261203720"  # HW
+    b"103735553251"  # SW raw — true SW = "1037355532"
+    b"/1/M5.9/03/161/DAMOS235"
+)
+_M59_FC_HW = "0261203720"
+_M59_FC_SW = "1037355532"
+_M59_FC_OEM = "037906259"
+
+# M5.9 — Format C (MOTRONIC keyword, 512KB, Golf MK3 2.0 ABA, variant 2)
+_M59_FC2_IDENT = (
+    b"037906259M  MOTRONIC M5.9       V01"
+    b"0261204634"
+    b"103735876854"  # true SW = "1037358768"
+    b"/1/M5.9/03/410401/DAMOS23B"
+)
+_M59_FC2_HW = "0261204634"
+_M59_FC2_SW = "1037358768"
+_M59_FC2_OEM = "037906259M"
+
+# M3.8.1 — Format C (MOTRONIC keyword, 128KB, VR6 Transporter)
+_M381_FC_IDENT = (
+    b"021906256H  MOTRONIC M3.8.1     V03"
+    b"0261203971"
+    b"103735522749"  # true SW = "1037355227"
+    b"/1/M3.81/03/175/DAMOS85"
+)
+_M381_FC_HW = "0261203971"
+_M381_FC_SW = "1037355227"
+_M381_FC_OEM = "021906256H"
+
+# M3.8.1 — Format C (MOTRONIC keyword, 128KB, VR6 Golf 3, SW prefix 2537)
+_M381_FC_2537_IDENT = (
+    b"021906256   MOTRONIC M3.8.1     V03"
+    b"0261203969"
+    b"253735593852"  # true SW = "2537355938"
+    b"/1/M3.81/03/176/DAMOS85"
+)
+_M381_FC_2537_HW = "0261203969"
+_M381_FC_2537_SW = "2537355938"
+_M381_FC_2537_OEM = "021906256"
+
+# M3.8.3 — Format C (MOTRONIC keyword, 256KB, Passat V5)
+_M383_FC_IDENT = (
+    b"071906018AE MOTRONIC M3.8.3     V01"
+    b"0261206620"
+    b"103735237155"  # true SW = "1037352371"
+    b"/1/M3.83/03/5223"
+)
+_M383_FC_HW = "0261206620"
+_M383_FC_SW = "1037352371"
+_M383_FC_OEM = "071906018AE"
+
+# M3.8.1 — Format D (MOTOR PMC keyword, 128KB, VR6 Sharan, SW prefix 2227)
+_M381_FD_IDENT = (
+    b"021906256Q     MOTOR    PMC "
+    b"\xff\xff\xff\xff\xff\xff\xff"
+    b"0261203665"
+    b"222735564049"  # true SW = "2227355640"
+    b"/1/3.8.1/03/176/DAMOS81"
+)
+_M381_FD_HW = "0261203665"
+_M381_FD_SW = "2227355640"
+_M381_FD_OEM = "021906256Q"
 
 # Trailing-dot family ident — group(4) = "M5.9." → rstrip(".") = "M5.9"
 _TRAILING_DOT_IDENT = (
@@ -181,6 +263,50 @@ def make_m592_256kb_bin(
     return bytes(buf)
 
 
+def make_m59_fc_512kb_bin() -> bytes:
+    """M5.9, 512KB (0x80000). Format C — MOTRONIC keyword, Golf MK3 2.0 ABA."""
+    buf = bytearray(0x80000)
+    buf[0x1103:0x1107] = b"M5.9"  # standalone detection sig
+    buf[0xBF06 : 0xBF06 + len(_M59_FC_IDENT)] = _M59_FC_IDENT
+    return bytes(buf)
+
+
+def make_m59_fc2_512kb_bin() -> bytes:
+    """M5.9, 512KB (0x80000). Format C variant 2 — Golf MK3 2.0 ABA."""
+    buf = bytearray(0x80000)
+    buf[0x10CF:0x10D3] = b"M5.9"
+    buf[0xBF06 : 0xBF06 + len(_M59_FC2_IDENT)] = _M59_FC2_IDENT
+    return bytes(buf)
+
+
+def make_m381_fc_128kb_bin() -> bytes:
+    """M3.8.1, 128KB (0x20000). Format C — MOTRONIC keyword, VR6 Transporter."""
+    buf = bytearray(0x20000)
+    buf[0xBF06 : 0xBF06 + len(_M381_FC_IDENT)] = _M381_FC_IDENT
+    return bytes(buf)
+
+
+def make_m381_fc_2537_128kb_bin() -> bytes:
+    """M3.8.1, 128KB (0x20000). Format C — VR6 Golf 3, SW prefix 2537."""
+    buf = bytearray(0x20000)
+    buf[0xBF06 : 0xBF06 + len(_M381_FC_2537_IDENT)] = _M381_FC_2537_IDENT
+    return bytes(buf)
+
+
+def make_m383_fc_256kb_bin() -> bytes:
+    """M3.8.3, 256KB (0x40000). Format C — MOTRONIC keyword, Passat V5."""
+    buf = bytearray(0x40000)
+    buf[0xBF06 : 0xBF06 + len(_M383_FC_IDENT)] = _M383_FC_IDENT
+    return bytes(buf)
+
+
+def make_m381_fd_128kb_bin() -> bytes:
+    """M3.8.1, 128KB (0x20000). Format D — MOTOR PMC, VR6 Sharan."""
+    buf = bytearray(0x20000)
+    buf[0xBF06 : 0xBF06 + len(_M381_FD_IDENT)] = _M381_FD_IDENT
+    return bytes(buf)
+
+
 def make_m592_garbage_oem_256kb_bin() -> bytes:
     """M5.92, 256KB, Format A — 2-digit garbage OEM prefix to be stripped."""
     buf = bytearray(0x40000)
@@ -210,6 +336,14 @@ def make_m383_alt_256kb_bin() -> bytes:
     buf = bytearray(0x40000)
     buf[0x0500:0x0504] = b"M3.8"
     buf[0x1000 : 0x1000 + len(_M383_ALT_IDENT)] = _M383_ALT_IDENT
+    return bytes(buf)
+
+
+def make_m383_v04_256kb_bin() -> bytes:
+    """M3.83, 256KB. Format B (MOTR HS) with V04 revision code."""
+    buf = bytearray(0x40000)
+    buf[0x0500:0x0504] = b"M3.8"
+    buf[0x1000 : 0x1000 + len(_M383_V04_IDENT)] = _M383_V04_IDENT
     return bytes(buf)
 
 
@@ -292,11 +426,17 @@ class TestIdentity:
     def test_m38_in_supported_families(self):
         assert "M3.8" in EXTRACTOR.supported_families
 
+    def test_m381_in_supported_families(self):
+        assert "M3.81" in EXTRACTOR.supported_families
+
     def test_m382_in_supported_families(self):
         assert "M3.82" in EXTRACTOR.supported_families
 
     def test_m383_in_supported_families(self):
         assert "M3.83" in EXTRACTOR.supported_families
+
+    def test_m381_dot_in_supported_families(self):
+        assert "M3.8.1" in EXTRACTOR.supported_families
 
     def test_m383_dot_in_supported_families(self):
         assert "M3.8.3" in EXTRACTOR.supported_families
@@ -372,6 +512,10 @@ class TestCanHandleTrue:
         buf[0x1000 : 0x1000 + len(_M592_IDENT)] = _M592_IDENT
         assert EXTRACTOR.can_handle(bytes(buf)) is True
 
+    def test_m383_v04_revision_accepted(self):
+        """Revision code V04 (not just D0x) is accepted by the ident_block regex."""
+        assert EXTRACTOR.can_handle(make_m383_v04_256kb_bin())
+
 
 # ---------------------------------------------------------------------------
 # TestCanHandleFalse
@@ -396,9 +540,16 @@ class TestCanHandleFalse:
     def test_all_ff_256kb_rejected(self):
         assert EXTRACTOR.can_handle(b"\xff" * 0x40000) is False
 
-    def test_512kb_size_rejected(self):
-        """512KB belongs to ME7 — excluded by size gate (Phase 2)."""
+    def test_512kb_size_accepted(self):
+        """512KB is now supported for M5.9 (Golf MK3 2.0 ABA)."""
         buf = bytearray(0x80000)
+        buf[0x0500:0x0504] = b"M5.9"
+        buf[0x1000 : 0x1000 + len(_M592_IDENT)] = _M592_IDENT
+        assert EXTRACTOR.can_handle(bytes(buf)) is True
+
+    def test_1mb_size_rejected(self):
+        """1MB is ME7 territory — excluded by size gate (Phase 2)."""
+        buf = bytearray(0x100000)
         buf[0x0500:0x0504] = b"M5.9"
         buf[0x1000 : 0x1000 + len(_M592_IDENT)] = _M592_IDENT
         assert EXTRACTOR.can_handle(bytes(buf)) is False
@@ -530,7 +681,7 @@ class TestCanHandleExclusions:
 
 
 class TestParseIdentBlock:
-    """Verify the ident block parser returns the correct match or None."""
+    """Verify _parse_ident_block() returns correct re.Match objects."""
 
     def test_returns_match_for_m592_ident(self):
         assert EXTRACTOR._parse_ident_block(make_m592_256kb_bin()) is not None
@@ -546,6 +697,21 @@ class TestParseIdentBlock:
 
     def test_returns_match_for_phase4_ident(self):
         assert EXTRACTOR._parse_ident_block(make_phase4_bin()) is not None
+
+    def test_returns_match_for_m59_format_c(self):
+        assert EXTRACTOR._parse_ident_block(make_m59_fc_512kb_bin()) is not None
+
+    def test_returns_match_for_m381_format_c(self):
+        assert EXTRACTOR._parse_ident_block(make_m381_fc_128kb_bin()) is not None
+
+    def test_returns_match_for_m381_format_c_2537(self):
+        assert EXTRACTOR._parse_ident_block(make_m381_fc_2537_128kb_bin()) is not None
+
+    def test_returns_match_for_m383_format_c(self):
+        assert EXTRACTOR._parse_ident_block(make_m383_fc_256kb_bin()) is not None
+
+    def test_returns_match_for_m381_format_d(self):
+        assert EXTRACTOR._parse_ident_block(make_m381_fd_128kb_bin()) is not None
 
     def test_returns_none_for_all_zero_256kb(self):
         assert EXTRACTOR._parse_ident_block(b"\x00" * 0x40000) is None
@@ -605,8 +771,44 @@ class TestParseIdentBlock:
 
     def test_match_group4_is_m69_family(self):
         m = EXTRACTOR._parse_ident_block(make_phase4_bin())
-        assert m is not None
-        assert m.group(4).decode("ascii") == "M6.9"
+        assert m.group(4).decode() == "M6.9"
+
+    def test_returns_match_for_m383_v04_ident(self):
+        assert EXTRACTOR._parse_ident_block(make_m383_v04_256kb_bin()) is not None
+
+    def test_match_group1_is_hw_v04(self):
+        m = EXTRACTOR._parse_ident_block(make_m383_v04_256kb_bin())
+        assert m.group(1).decode() == _M383_V04_HW
+
+    # --- Format C/D group values ---
+
+    def test_match_group1_is_hw_m59_fc(self):
+        m = EXTRACTOR._parse_ident_block(make_m59_fc_512kb_bin())
+        assert m.group(1).decode() == _M59_FC_HW
+
+    def test_match_group4_is_m59_fc_family(self):
+        m = EXTRACTOR._parse_ident_block(make_m59_fc_512kb_bin())
+        assert m.group(4).decode() == "M5.9"
+
+    def test_match_group1_is_hw_m381_fc(self):
+        m = EXTRACTOR._parse_ident_block(make_m381_fc_128kb_bin())
+        assert m.group(1).decode() == _M381_FC_HW
+
+    def test_match_group4_is_m381_fc_family(self):
+        m = EXTRACTOR._parse_ident_block(make_m381_fc_128kb_bin())
+        assert m.group(4).decode() == "M3.81"
+
+    def test_match_group1_is_hw_m381_fd(self):
+        m = EXTRACTOR._parse_ident_block(make_m381_fd_128kb_bin())
+        assert m.group(1).decode() == _M381_FD_HW
+
+    def test_match_group4_is_381_fd_family(self):
+        m = EXTRACTOR._parse_ident_block(make_m381_fd_128kb_bin())
+        assert m.group(4).decode() == "3.8.1"
+
+    def test_match_group1_is_hw_m383_fc(self):
+        m = EXTRACTOR._parse_ident_block(make_m383_fc_256kb_bin())
+        assert m.group(1).decode() == _M383_FC_HW
 
 
 # ---------------------------------------------------------------------------
@@ -629,6 +831,23 @@ class TestResolveEcuFamily:
 
     def test_m592_normalises_to_m59(self):
         data = make_m592_256kb_bin()
+        assert EXTRACTOR._resolve_ecu_family(self._ident(data), data) == "M5.9"
+
+    def test_m381_normalises_to_m38(self):
+        data = make_m381_fc_128kb_bin()
+        assert EXTRACTOR._resolve_ecu_family(self._ident(data), data) == "M3.8"
+
+    def test_m381_2537_normalises_to_m38(self):
+        data = make_m381_fc_2537_128kb_bin()
+        assert EXTRACTOR._resolve_ecu_family(self._ident(data), data) == "M3.8"
+
+    def test_format_d_381_normalises_to_m38(self):
+        """Format D family '3.8.1' (without M prefix) normalises to M3.8."""
+        data = make_m381_fd_128kb_bin()
+        assert EXTRACTOR._resolve_ecu_family(self._ident(data), data) == "M3.8"
+
+    def test_m59_format_c_resolves_to_m59(self):
+        data = make_m59_fc_512kb_bin()
         assert EXTRACTOR._resolve_ecu_family(self._ident(data), data) == "M5.9"
 
     def test_m383_normalises_to_m38(self):
@@ -1026,6 +1245,143 @@ class TestExtractM592:
         assert len(self.result["raw_strings"]) > 0
 
     def test_raw_strings_contain_motr(self):
+        assert any("MOTR" in s for s in self.result["raw_strings"])
+
+
+class TestExtractM59FormatC512KB:
+    """Full extraction for M5.9 Format C (MOTRONIC keyword, 512KB, Golf MK3 2.0 ABA)."""
+
+    def setup_method(self):
+        self.data = make_m59_fc_512kb_bin()
+        self.result = EXTRACTOR.extract(self.data)
+
+    def test_ecu_family_is_m59(self):
+        assert self.result["ecu_family"] == "M5.9"
+
+    def test_hardware_number(self):
+        assert self.result["hardware_number"] == _M59_FC_HW
+
+    def test_software_version(self):
+        assert self.result["software_version"] == _M59_FC_SW
+
+    def test_oem_part_number(self):
+        assert self.result["oem_part_number"] == _M59_FC_OEM
+
+    def test_file_size_is_512kb(self):
+        assert self.result["file_size"] == 0x80000
+
+    def test_match_key_format(self):
+        assert self.result["match_key"] == f"M5.9::{_M59_FC_SW}"
+
+    def test_match_key_is_uppercase(self):
+        assert self.result["match_key"] == self.result["match_key"].upper()
+
+
+class TestExtractM381FormatC128KB:
+    """Full extraction for M3.8.1 Format C (MOTRONIC keyword, 128KB, VR6 Transporter)."""
+
+    def setup_method(self):
+        self.data = make_m381_fc_128kb_bin()
+        self.result = EXTRACTOR.extract(self.data)
+
+    def test_ecu_family_is_m38(self):
+        assert self.result["ecu_family"] == "M3.8"
+
+    def test_hardware_number(self):
+        assert self.result["hardware_number"] == _M381_FC_HW
+
+    def test_software_version(self):
+        assert self.result["software_version"] == _M381_FC_SW
+
+    def test_oem_part_number(self):
+        assert self.result["oem_part_number"] == _M381_FC_OEM
+
+    def test_file_size_is_128kb(self):
+        assert self.result["file_size"] == 0x20000
+
+    def test_match_key_format(self):
+        assert self.result["match_key"] == f"M3.8::{_M381_FC_SW}"
+
+
+class TestExtractM381FormatC2537:
+    """Full extraction for M3.8.1 Format C (VR6 Golf 3, SW prefix 2537)."""
+
+    def setup_method(self):
+        self.data = make_m381_fc_2537_128kb_bin()
+        self.result = EXTRACTOR.extract(self.data)
+
+    def test_ecu_family_is_m38(self):
+        assert self.result["ecu_family"] == "M3.8"
+
+    def test_hardware_number(self):
+        assert self.result["hardware_number"] == _M381_FC_2537_HW
+
+    def test_software_version(self):
+        assert self.result["software_version"] == _M381_FC_2537_SW
+
+    def test_sw_starts_with_2537(self):
+        assert self.result["software_version"].startswith("2537")
+
+    def test_oem_part_number(self):
+        assert self.result["oem_part_number"] == _M381_FC_2537_OEM
+
+    def test_match_key_format(self):
+        assert self.result["match_key"] == f"M3.8::{_M381_FC_2537_SW}"
+
+
+class TestExtractM381FormatD:
+    """Full extraction for M3.8.1 Format D (MOTOR PMC, 128KB, VR6 Sharan)."""
+
+    def setup_method(self):
+        self.data = make_m381_fd_128kb_bin()
+        self.result = EXTRACTOR.extract(self.data)
+
+    def test_ecu_family_is_m38(self):
+        assert self.result["ecu_family"] == "M3.8"
+
+    def test_hardware_number(self):
+        assert self.result["hardware_number"] == _M381_FD_HW
+
+    def test_software_version(self):
+        assert self.result["software_version"] == _M381_FD_SW
+
+    def test_sw_starts_with_2227(self):
+        assert self.result["software_version"].startswith("2227")
+
+    def test_oem_part_number(self):
+        assert self.result["oem_part_number"] == _M381_FD_OEM
+
+    def test_match_key_format(self):
+        assert self.result["match_key"] == f"M3.8::{_M381_FD_SW}"
+
+    def test_file_size_is_128kb(self):
+        assert self.result["file_size"] == 0x20000
+
+
+class TestExtractM383FormatC:
+    """Full extraction for M3.8.3 Format C (MOTRONIC keyword, 256KB, Passat V5)."""
+
+    def setup_method(self):
+        self.data = make_m383_fc_256kb_bin()
+        self.result = EXTRACTOR.extract(self.data)
+
+    def test_ecu_family_is_m38(self):
+        assert self.result["ecu_family"] == "M3.8"
+
+    def test_hardware_number(self):
+        assert self.result["hardware_number"] == _M383_FC_HW
+
+    def test_software_version(self):
+        assert self.result["software_version"] == _M383_FC_SW
+
+    def test_oem_part_number(self):
+        assert self.result["oem_part_number"] == _M383_FC_OEM
+
+    def test_match_key_format(self):
+        assert self.result["match_key"] == f"M3.8::{_M383_FC_SW}"
+
+    def test_file_size_is_256kb(self):
+        assert self.result["file_size"] == 0x40000
         combined = " ".join(self.result["raw_strings"])
         assert "MOTR" in combined
 
@@ -1170,6 +1526,34 @@ class TestExtractM383Alt:
 
     def test_match_key_format(self):
         assert self.result["match_key"] == f"M3.8::{_M383_ALT_SW}"
+
+
+# ---------------------------------------------------------------------------
+# TestExtractM383V04
+# ---------------------------------------------------------------------------
+
+
+class TestExtractM383V04:
+    """M3.83 with V04 revision code — Seat Alhambra 1.8T AJH."""
+
+    def setup_method(self):
+        data = make_m383_v04_256kb_bin()
+        self.result = EXTRACTOR.extract(data, "test_v04.bin")
+
+    def test_ecu_family_is_m38(self):
+        assert self.result["ecu_family"] == "M3.8"
+
+    def test_hardware_number(self):
+        assert self.result["hardware_number"] == _M383_V04_HW
+
+    def test_software_version(self):
+        assert self.result["software_version"] == _M383_V04_SW
+
+    def test_oem_part_number(self):
+        assert self.result["oem_part_number"] == _M383_V04_OEM
+
+    def test_match_key_format(self):
+        assert self.result["match_key"] == f"M3.8::{_M383_V04_SW}"
 
 
 # ---------------------------------------------------------------------------

@@ -94,6 +94,24 @@ Binary structure and file sizes:
     Observed for    : 03G906016xx part numbers (same PD engines as above,
                       different dump method — single-sector read only)
 
+  EDC16 half-flash dump — 512KB (0x80000 = 524288 bytes):
+    A partial flash read that captures the active section plus additional
+    calibration/data sectors beyond the 256KB sector-only dump. The file
+    begins directly with the active section header (same as 256KB layout)
+    but includes twice as much flash content.
+    Header magic    : \xde\xca\xfe at 0x3d  (file start = active_start)
+    SW version      : Plain ASCII "1037xxxxxx" at 0x10
+    ECU family str  : may or may not be present
+    Active section  : starts at 0x0
+    OEM part number : embedded as plain ASCII in data area (e.g. at ~0x40CAE)
+    Observed for    : 03G906021LL (Seat Leon 2.0 TDI 140HP, sw=1037381350)
+                      VAG PD (Pumpe-Düse) engines — same family as 256KB and
+                      1MB PD dumps, different read tool / dump method.
+    Note            : first bytes at offset 0x10 contain the SW version
+                      followed by additional printable ASCII (e.g.
+                      "1037381350P447HAS9") — the strict 10-char SW pattern
+                      correctly extracts only the "1037381350" prefix.
+
 SW version offset formula (invariant across all layouts):
   active_start + 0x10  → SW version
   active_start + 0x3d  → \xde\xca\xfe magic
@@ -212,6 +230,7 @@ ACTIVE_STARTS_BY_SIZE: Dict[int, list] = {
         0xC0000,
         0x1C0000,
     ],  # 2MB: BMW C31/C35 first, then X6, then Alfa C39 / PSA EDC16C34
+    0x80000: [0x0000],  # 512KB half-flash dump: active section at file start (VAG PD)
     0x40000: [0x0000],  # 256KB sector dump: active section IS the file
     0xF0000: [0x30000],  # 983040: truncated C31/C35 (missing first 64KB)
 }
@@ -221,6 +240,7 @@ ACTIVE_STARTS_BY_SIZE: Dict[int, list] = {
 SW_OFFSET_BY_SIZE: Dict[int, int] = {
     0x100000: 0x40010,  # 1MB — C8 primary (PD handled via ACTIVE_STARTS_BY_SIZE)
     0x200000: 0x40010,  # 2MB — BMW C31/C35 primary (C39 handled via ACTIVE_STARTS_BY_SIZE)
+    0x80000: 0x0010,  # 512KB half-flash dump (VAG PD)
     0x40000: 0x0010,  # 256KB sector dump
     0xF0000: 0x30010,  # 983040 truncated C31/C35
 }
@@ -231,6 +251,7 @@ SW_OFFSET_BY_SIZE: Dict[int, int] = {
 SW_MIRROR_OFFSET_BY_SIZE: Dict[int, Optional[int]] = {
     0x100000: 0xE0010,  # 1MB C8 secondary copy (not valid for PD layout)
     0x200000: None,  # 2MB — ACTIVE_STARTS_BY_SIZE handles all candidates
+    0x80000: None,  # 512KB half-flash dump — no mirror
     0x40000: None,  # 256KB — single section, no mirror
     0xF0000: None,  # 983040 truncated — single active section
 }
@@ -303,6 +324,7 @@ MAGIC_OFFSETS_BY_SIZE: Dict[int, list] = {
         0x2003D,  # BMW E46 320D EDC16C31 early layout (active_start=0x20000)
     ],  # 1MB: C8→0xe003d, EDC16C9 (Opel)→0xc003d, PD→0xd003d, BMW E46→0x2003d
     0x200000: [0x4003D, 0xC003D, 0x1C003D],  # 2MB: BMW C31/C35, X6, Alfa C39
+    0x80000: [0x003D],  # 512KB half-flash dump (VAG PD)
     0x40000: [0x003D],  # 256KB sector dump
     0xF0000: [0x3003D],  # 983040 truncated C31/C35
 }
@@ -322,10 +344,17 @@ DETECTION_SIGNATURES: list[bytes] = [
 # ---------------------------------------------------------------------------
 # Exclusion signatures
 # ---------------------------------------------------------------------------
-# If ANY of these are found in the first 512KB the binary is NOT EDC16.
+# If ANY of these are found anywhere in the binary it is NOT EDC16.
+# The full binary is searched (not just the first 512KB) because some
+# families — notably ME7.1.1 in 1MB bins (e.g. VW Golf 5 R32 3.2 VR6) —
+# store all identity strings (ME7., MOTRONIC) in the upper half of the
+# file.  Searching only the first 512KB missed them and allowed the
+# Phase 4 flash-layout heuristic to falsely accept ME7 bins as EDC16C8.
+#
 # Guards against the EDC16 extractor claiming modern Bosch bins (EDC17,
 # MEDC17) that share the "EDC16" substring as part of "EDC16..." in
-# internal strings, and against EDC15 bins that share the 1037 SW prefix.
+# internal strings, against EDC15 bins that share the 1037 SW prefix,
+# and against ME7 bins that share the 1MB size and a similar flash layout.
 # ---------------------------------------------------------------------------
 
 EXCLUSION_SIGNATURES: list[bytes] = [
@@ -345,6 +374,7 @@ EXCLUSION_SIGNATURES: list[bytes] = [
 # Supported file sizes — anything outside this set is rejected immediately.
 #   0x100000 — 1MB      : EDC16C8, EDC16C9 (Opel) and EDC16 VAG PD
 #   0x200000 — 2MB      : EDC16C39 (Alfa) and EDC16C31/C35 (BMW)
+#   0x080000 — 512KB    : EDC16 VAG PD half-flash dump (e.g. 03G906021LL Seat/VW 2.0 TDI)
 #   0x040000 — 256KB    : EDC16 sector/active-section-only dump
 #   0x0F0000 — 983040   : EDC16C31/C35 truncated (missing first 64KB boot sector)
-SUPPORTED_SIZES: set[int] = {0x100000, 0x200000, 0x40000, 0xF0000}
+SUPPORTED_SIZES: set[int] = {0x100000, 0x200000, 0x80000, 0x40000, 0xF0000}

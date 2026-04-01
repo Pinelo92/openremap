@@ -2,6 +2,7 @@ from openremap.tuning.manufacturers.bosch.edc1.extractor import BoschEDC1Extract
 from openremap.tuning.manufacturers.bosch.motronic_legacy.extractor import (
     BoschMotronicLegacyExtractor,
 )
+from openremap.tuning.manufacturers.bosch.mono.extractor import BoschMonoExtractor
 from openremap.tuning.manufacturers.bosch.edc3x.extractor import BoschEDC3xExtractor
 from openremap.tuning.manufacturers.bosch.edc17.extractor import BoschExtractor
 from openremap.tuning.manufacturers.bosch.edc16.extractor import BoschEDC16Extractor
@@ -11,7 +12,9 @@ from openremap.tuning.manufacturers.bosch.m1x.extractor import BoschM1xExtractor
 from openremap.tuning.manufacturers.bosch.m1x55.extractor import BoschM1x55Extractor
 from openremap.tuning.manufacturers.bosch.m2x.extractor import BoschM2xExtractor
 from openremap.tuning.manufacturers.bosch.m3x.extractor import BoschM3xExtractor
+from openremap.tuning.manufacturers.bosch.m4x.extractor import BoschM4xExtractor
 from openremap.tuning.manufacturers.bosch.m5x.extractor import BoschM5xExtractor
+from openremap.tuning.manufacturers.bosch.mp9.extractor import BoschMP9Extractor
 from openremap.tuning.manufacturers.bosch.me7.extractor import BoschME7Extractor
 from openremap.tuning.manufacturers.bosch.me9.extractor import BoschME9Extractor
 from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
@@ -61,6 +64,19 @@ from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
 #                      header).  Must come AFTER BoschM1xExtractor because the
 #                      M1xExtractor exclusion set includes the \\x85\\x0a\\xf0\\x30
 #                      magic which disjoints the two cleanly.  Must come BEFORE
+#                      BoschMonoExtractor and BoschM3xExtractor.
+#
+# BoschMonoExtractor — Mono-Motronic (MA1.2 / MA1.2.3, ~1989–1997): VW/Audi/
+#                      Seat single-point injection ECUs.  8051 CPU, 32KB or
+#                      64KB dumps.  Detected by 8051 LJMP header (\x02\x05)
+#                      + PMC keyword.  Disjoint from M1.x (different reset
+#                      vector, no reversed-digit ident), M2.x/M5.x (no
+#                      '"0000000M' marker, no MOTRONIC label), and legacy
+#                      (different header bytes).  Must come AFTER
+#                      BoschMotronicLegacyExtractor (legacy exclusion set
+#                      includes '"0000000M' which is absent from Mono bins,
+#                      so there is no collision — but ordering after legacy
+#                      makes the intent clear).  Must come BEFORE
 #                      BoschM3xExtractor — M3.x bins carry the "1350000M3" /
 #                      "1530000M3" marker which is in the legacy exclusion set,
 #                      so no overlap is possible.
@@ -79,6 +95,16 @@ from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
 # BoschM3xExtractor  — M3.x (1989–1999): no ME7/EDC17 signatures at all,
 #                      must be confirmed before the broader extractors run.
 #
+# BoschM4xExtractor  — M4.x (Volvo, 1994–2002): Volvo 850 / 960 / S70 / V70
+#                      / S60 / S80 petrol ECUs.  M4.3 at 64KB, M4.4 at 128KB.
+#                      Identified by DAMOS "/M4.3/" or "/M4.4/" slash-delimited
+#                      family marker and/or a sequential-digit ident block
+#                      (HW+SW in direct order, NOT reversed) in the last 2KB.
+#                      Must come AFTER BoschM3xExtractor (M3.x uses reversed
+#                      digits and different family markers — completely disjoint)
+#                      and BEFORE BoschM2xExtractor (M2.x uses different markers
+#                      and is in the same size range at 128KB).
+#
 # BoschM2xExtractor  — M2.x (1993–1999): identified by the unique
 #                      '"0000000M2.' family marker. Placed before ME7 to
 #                      correctly handle the Porsche 964 (M2.3) 32 KB bin.
@@ -96,6 +122,15 @@ from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
 #                      prevents ME7 from stealing these bins; the size gate
 #                      (128KB / 256KB only) prevents M5x from stealing any
 #                      larger ME7 bin.
+#
+# BoschMP9Extractor  — MP 9.0 (1996–2002): VW/Seat/Skoda 1.0–1.6L petrol
+#                      ECUs. 64KB dumps only. Detected by "MOTRONIC MP 9"
+#                      label in the last 1 KB and/or "MP9" + "0261xxxxxx"
+#                      HW pattern. Must come before BoschME7Extractor —
+#                      b"MOTRONIC" alone was previously a false-positive
+#                      trigger for ME7. The 64KB size gate is completely
+#                      disjoint from M5x (128/256KB) and ME7 (512KB+).
+#                      Must come after BoschM5xExtractor for clarity.
 #
 # BoschME7Extractor  — ME7 family: no EDC17/MEDC17 signatures, must be
 #                      confirmed before the broad BoschExtractor runs.
@@ -122,11 +157,14 @@ EXTRACTORS: list[BaseManufacturerExtractor] = [
     BoschEDC3xExtractor(),
     BoschM1xExtractor(),
     BoschMotronicLegacyExtractor(),
+    BoschMonoExtractor(),
     BoschM1x55Extractor(),
     BoschM3xExtractor(),
+    BoschM4xExtractor(),
     BoschM2xExtractor(),
     BoschLHExtractor(),
     BoschM5xExtractor(),
+    BoschMP9Extractor(),
     BoschME7Extractor(),
     BoschME9Extractor(),
     BoschEDC16Extractor(),
@@ -143,11 +181,14 @@ __all__ = [
     "BoschEDC15Extractor",
     "BoschLHExtractor",
     "BoschM1xExtractor",
+    "BoschMonoExtractor",
     "BoschMotronicLegacyExtractor",
     "BoschM1x55Extractor",
     "BoschM2xExtractor",
     "BoschM3xExtractor",
+    "BoschM4xExtractor",
     "BoschM5xExtractor",
+    "BoschMP9Extractor",
     "BoschME7Extractor",
     "BoschME9Extractor",
 ]

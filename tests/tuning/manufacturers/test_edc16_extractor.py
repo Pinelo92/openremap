@@ -410,6 +410,28 @@ class TestCanHandleExclusions:
     def test_tsw_space_blocks_detection(self):
         assert EXTRACTOR.can_handle(self._make_with_exclusion(b"TSW ")) is False
 
+    def test_exclusion_me7_in_upper_half_blocks_detection(self):
+        """ME7 signature past 512KB still blocks detection.
+
+        Regression test: earlier code only searched data[:0x80000] for
+        exclusion signatures, so ME7 strings in the upper half of a 1MB
+        bin were missed.
+        """
+        buf = make_buf(SIZE_1MB, fill=0xFF)
+        write(buf, 0x40000 + 0x3D, EDC16_HEADER_MAGIC)
+        write(buf, 0x40000 + 0x10, SW_1037)
+        # Place ME7 signature past the 512KB mark
+        write(buf, 0x0E006B, b"ME7.")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+    def test_exclusion_motronic_in_upper_half_blocks_detection(self):
+        """MOTRONIC label past 512KB still blocks detection."""
+        buf = make_buf(SIZE_1MB, fill=0xFF)
+        write(buf, 0x40000 + 0x3D, EDC16_HEADER_MAGIC)
+        write(buf, 0x40000 + 0x10, SW_1037)
+        write(buf, 0x0FD0F7, b"MOTRONIC")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
     def test_all_exclusion_sigs_independently_block(self):
         """Verify each signature in EXCLUSION_SIGNATURES independently blocks."""
         base = make_edc16_256kb_bin()
@@ -922,6 +944,49 @@ class TestCanHandleScrambledBin:
         # erased section stays all-zero (0% FF < 95%) → Phase 4 fails
         # No DECAFE, no EDC16 string → also fails Phase 3
         assert EXTRACTOR.can_handle(bytes(data)) is False
+
+    def test_density_fingerprint_rejected_when_me7_signature_in_upper_half(self):
+        """Phase 4 guard: ME7 family string in cal area → rejected.
+
+        Regression test for VW Golf 5 R32 3.2 VR6 (ME7.1.1, 1MB).
+        The ME7.1.1 flash layout coincidentally matches the scrambled-EDC16C8
+        density fingerprint (code at bottom, erased gap, cal+ident at top).
+        The ME7.x identity strings live entirely past 512KB, so the Phase 4
+        guard must scan the full binary for ME7 signatures before accepting.
+        """
+        data = bytearray(SIZE_1MB)
+        # Set up the density fingerprint: boot dense, erased 0xFF, cal dense
+        for i in range(0x040000, 0x0E0000):
+            data[i] = 0xFF
+        # Place ME7 family string in the calibration area (upper half)
+        me7_offset = 0x0E006B
+        data[me7_offset : me7_offset + 4] = b"ME7."
+        assert EXTRACTOR.can_handle(bytes(data)) is False
+
+    def test_density_fingerprint_rejected_when_motronic_in_upper_half(self):
+        """Phase 4 guard: MOTRONIC label in cal area → rejected."""
+        data = bytearray(SIZE_1MB)
+        for i in range(0x040000, 0x0E0000):
+            data[i] = 0xFF
+        motronic_offset = 0x0FD0F7
+        data[motronic_offset : motronic_offset + 8] = b"MOTRONIC"
+        assert EXTRACTOR.can_handle(bytes(data)) is False
+
+    def test_density_fingerprint_rejected_when_me731_in_upper_half(self):
+        """Phase 4 guard: ME731 string in cal area → rejected."""
+        data = bytearray(SIZE_1MB)
+        for i in range(0x040000, 0x0E0000):
+            data[i] = 0xFF
+        data[0x0F0000:0x0F0005] = b"ME731"
+        assert EXTRACTOR.can_handle(bytes(data)) is False
+
+    def test_density_fingerprint_still_accepted_without_me7_signatures(self):
+        """Phase 4 still works for genuine scrambled EDC16C8 (no ME7 strings)."""
+        data = bytearray(SIZE_1MB)
+        for i in range(0x040000, 0x0E0000):
+            data[i] = 0xFF
+        # No ME7 signatures anywhere → should still accept
+        assert EXTRACTOR.can_handle(bytes(data)) is True
 
 
 # ---------------------------------------------------------------------------

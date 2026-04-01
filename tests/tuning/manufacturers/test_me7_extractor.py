@@ -148,8 +148,17 @@ class TestCanHandleTrueSignatures:
     def test_me731_signature(self):
         assert EXTRACTOR.can_handle(self._make(b"ME731")) is True
 
-    def test_motronic_signature(self):
-        assert EXTRACTOR.can_handle(self._make(b"MOTRONIC")) is True
+    def test_motronic_signature_alone_rejected(self):
+        # MOTRONIC alone is not sufficient — other Bosch families (MP9, M1.5.4)
+        # also contain this string.  ME7 context (b"ME7") must be present too.
+        assert EXTRACTOR.can_handle(self._make(b"MOTRONIC")) is False
+
+    def test_motronic_signature_with_me7_context(self):
+        # MOTRONIC + ME7 context together should be accepted.
+        buf = make_buf(SIZE_128KB)
+        write(buf, 0x1000, b"MOTRONIC")
+        write(buf, 0x2000, b"ME7")
+        assert EXTRACTOR.can_handle(bytes(buf)) is True
 
     def test_multiple_signatures_still_true(self):
         buf = make_buf(SIZE_128KB)
@@ -173,6 +182,87 @@ class TestCanHandleTrueSignatures:
         buf = make_buf(SIZE_512KB)
         write(buf, 0x10000, b"ME7.")
         assert EXTRACTOR.can_handle(bytes(buf)) is True
+
+    def test_me_space_7_dot_signature(self):
+        """'ME 7.' (space-separated) covers early Volvo ME 7.0 bins."""
+        assert EXTRACTOR.can_handle(self._make(b"ME 7.")) is True
+
+    def test_me_space_7_dot_0_signature(self):
+        """'ME 7.0' (space-separated) — specific early Volvo variant."""
+        assert EXTRACTOR.can_handle(self._make(b"ME 7.0")) is True
+
+    def test_me_space_7_dot_in_1mb_binary(self):
+        """1MB binary with only 'ME 7.0' string — no ZZ, no MOTRONIC."""
+        buf = make_buf(1 * MB)
+        write(buf, 0x18370, b"ME 7.0")
+        assert EXTRACTOR.can_handle(bytes(buf)) is True
+
+    def test_me_space_7_dot_with_exclusion_rejected(self):
+        """'ME 7.' alone is not enough when an exclusion signature is present."""
+        buf = make_buf(SIZE_128KB)
+        write(buf, 0x1000, b"ME 7.0")
+        write(buf, 0x2000, b"EDC17")
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
+
+
+# ---------------------------------------------------------------------------
+# can_handle — Volvo ME 7.0 format (1MB, no ZZ, no MOTRONIC)
+# ---------------------------------------------------------------------------
+
+
+class TestCanHandleVolvoMe70:
+    """
+    Early Volvo ME 7.0 bins (e.g. S60 2.0T 163HP, ~2000 era) have a unique
+    layout: 1MB, C167 interrupt vectors, sequential 0261/1037 ident at
+    0x18016, Volvo OEM metadata with 'ME 7.0' at ~0x18370, but NO standard
+    ME7 detection anchors (no ZZ at 0x10000, no MOTRONIC label, no 'ME7.'
+    without space).  The 'ME 7.' signature in Phase 2a is the detection path.
+    """
+
+    @staticmethod
+    def _make_volvo_me70() -> bytes:
+        """Build a synthetic 1MB Volvo ME 7.0 binary."""
+        buf = make_buf(1 * MB, fill=0xFF)
+        # C167 interrupt vector table at offset 0
+        for i in range(0, 0x100, 4):
+            write(buf, i, b"\xea\x00")
+        # Sequential HW+SW ident at 0x18016 (NOT in a ZZ block)
+        write(buf, 0x18016, b"02612045591037359462")
+        # Volvo OEM metadata field containing "ME 7.0"
+        write(buf, 0x18335, b"VOLVO ID.")
+        write(buf, 0x18370, b"ME 7.0 2XFM")
+        return bytes(buf)
+
+    def test_can_handle_true(self):
+        assert EXTRACTOR.can_handle(self._make_volvo_me70()) is True
+
+    def test_extract_hw(self):
+        result = EXTRACTOR.extract(self._make_volvo_me70())
+        assert result["hardware_number"] == "0261204559"
+
+    def test_extract_sw(self):
+        result = EXTRACTOR.extract(self._make_volvo_me70())
+        assert result["software_version"] == "1037359462"
+
+    def test_extract_family_fallback(self):
+        """Family resolves to generic 'ME7' (no standard variant string)."""
+        result = EXTRACTOR.extract(self._make_volvo_me70())
+        # Family is at least ME7-rooted — the resolver's last-resort fallback
+        assert result["ecu_family"] is not None
+        assert result["ecu_family"].startswith("ME7")
+
+    def test_extract_match_key(self):
+        result = EXTRACTOR.extract(self._make_volvo_me70())
+        assert result["match_key"] is not None
+        assert "1037359462" in result["match_key"]
+
+    def test_extract_manufacturer(self):
+        result = EXTRACTOR.extract(self._make_volvo_me70())
+        assert result["manufacturer"] == "Bosch"
+
+    def test_extract_file_size(self):
+        result = EXTRACTOR.extract(self._make_volvo_me70())
+        assert result["file_size"] == 1 * MB
 
 
 # ---------------------------------------------------------------------------
@@ -351,10 +441,12 @@ class TestCanHandleFalseExclusions:
 
 
 class TestCanHandleBoundary:
-    def test_motronic_alone_with_no_me7_string_is_true(self):
+    def test_motronic_alone_with_no_me7_string_is_rejected(self):
+        # MOTRONIC alone is not sufficient — other Bosch families (MP9, M1.5.4)
+        # also contain this string.  ME7 context (b"ME7") must be present too.
         buf = make_buf(SIZE_128KB)
         write(buf, 0x1000, b"MOTRONIC")
-        assert EXTRACTOR.can_handle(bytes(buf)) is True
+        assert EXTRACTOR.can_handle(bytes(buf)) is False
 
     def test_me71_without_dot_is_true(self):
         buf = make_buf(SIZE_128KB)
