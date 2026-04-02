@@ -95,7 +95,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
 
         target_file.write_bytes(original)
@@ -119,7 +119,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
 
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -139,7 +139,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
 
         target_file.write_bytes(original)
@@ -163,7 +163,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
 
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -180,7 +180,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.ori"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.ori"
 
         target_file.write_bytes(original)
@@ -201,7 +201,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
 
         target_file.write_bytes(original)
@@ -240,7 +240,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         report_file = tmp_path / "report.json"
 
@@ -272,7 +272,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
 
         target_file.write_bytes(original)
@@ -303,7 +303,7 @@ class TestTuneSuccess:
         recipe = _make_recipe(original, original)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
 
         target_file.write_bytes(original)
@@ -339,7 +339,7 @@ class TestTuneErrors:
         recipe = _make_recipe(original, original)
 
         target_file = tmp_path / "target.txt"  # wrong extension
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
 
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -364,6 +364,8 @@ class TestTuneErrors:
         result = runner.invoke(app, ["tune", str(target_file), str(recipe_file)])
 
         assert result.exit_code == 1
+        error_text = result.stderr + result.stdout
+        assert ".openremap" in error_text.lower()
 
     def test_missing_target_exits_nonzero(self, tmp_path):
         """A non-existent target file causes non-zero exit."""
@@ -371,7 +373,7 @@ class TestTuneErrors:
         recipe = _make_recipe(original, original)
 
         missing = tmp_path / "ghost.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
 
         recipe_file.write_text(json.dumps(recipe))
 
@@ -384,7 +386,7 @@ class TestTuneErrors:
         original = _make_bin(1024)
 
         target_file = tmp_path / "target.bin"
-        missing = tmp_path / "ghost.json"
+        missing = tmp_path / "ghost.openremap"
 
         target_file.write_bytes(original)
 
@@ -398,7 +400,7 @@ class TestTuneErrors:
         recipe = _make_recipe(original, original)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
 
         target_file.write_bytes(b"")  # empty
         recipe_file.write_text(json.dumps(recipe))
@@ -414,7 +416,7 @@ class TestTuneErrors:
         original = _make_bin(1024)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
 
         target_file.write_bytes(original)
         recipe_file.write_text("not valid json {{{")
@@ -435,7 +437,7 @@ class TestTuneErrors:
         target_data = _make_bin(1024, {100: 0xBB})  # different byte at offset 100
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
 
         target_file.write_bytes(target_data)
@@ -461,7 +463,7 @@ class TestTuneErrors:
         target_data = _make_bin(2048)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
 
         target_file.write_bytes(target_data)
@@ -501,7 +503,7 @@ class TestTuneReadErrors:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
 
@@ -520,7 +522,7 @@ class TestTuneReadErrors:
         modified = _make_bin(1024, {100: 0xAA})
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         target_file.write_bytes(original)
         recipe_file.write_text("{}")  # Written before mock is active
 
@@ -554,7 +556,7 @@ class TestTunePhase1Warnings:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
 
@@ -577,7 +579,7 @@ class TestTunePhase1Warnings:
         recipe["ecu"]["file_size"] = 2048
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -598,7 +600,7 @@ class TestTunePhase1Warnings:
 
         # Target has wrong bytes — phase 1 fails
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         target_file.write_bytes(_make_bin(1024, {100: 0xFF}))
         recipe_file.write_text(json.dumps(recipe))
 
@@ -618,7 +620,7 @@ class TestTunePhase1Warnings:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         report_file = tmp_path / "report.json"
         target_file.write_bytes(_make_bin(1024, {100: 0xFF}))
         recipe_file.write_text(json.dumps(recipe))
@@ -650,7 +652,7 @@ class TestTunePhase2Mocked:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -682,7 +684,7 @@ class TestTunePhase2Mocked:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -715,7 +717,7 @@ class TestTunePhase2Mocked:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         report_file = tmp_path / "report.json"
         target_file.write_bytes(original)
@@ -749,7 +751,7 @@ class TestTunePhase2Mocked:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -792,7 +794,7 @@ class TestTunePhase2Mocked:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -847,7 +849,7 @@ class TestTunePhase3Mocked:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -898,7 +900,7 @@ class TestTunePhase3Mocked:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -936,7 +938,7 @@ class TestTuneIntegration:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         report_file = tmp_path / "report.json"
 
@@ -968,7 +970,7 @@ class TestTuneIntegration:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         report_file = tmp_path / "report.json"
 
@@ -1011,7 +1013,7 @@ class TestTunePhase1MatchKeyWarn:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -1025,7 +1027,7 @@ class TestTunePhase1MatchKeyWarn:
             mock_val.validate_all.return_value = None
             mock_val.to_dict.return_value = {
                 "target_file": "target.bin",
-                "recipe_file": "recipe.json",
+                "recipe_file": "recipe.openremap",
                 "target_md5": "abc",
                 "summary": {
                     "total": 1,
@@ -1064,7 +1066,7 @@ class TestTunePhase2GeneralException:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -1102,7 +1104,7 @@ class TestTuneWriteBinaryOSError:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         target_file.write_bytes(original)
         recipe_file.write_text(json.dumps(recipe))
@@ -1137,7 +1139,7 @@ class TestTuneWriteReportOSError:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_file = tmp_path / "output.bin"
         report_file = tmp_path / "report.json"
         target_file.write_bytes(original)
@@ -1170,7 +1172,7 @@ class TestTuneWriteReportOSError:
         recipe = _make_recipe(original, modified)
 
         target_file = tmp_path / "target.bin"
-        recipe_file = tmp_path / "recipe.json"
+        recipe_file = tmp_path / "recipe.openremap"
         output_dir = tmp_path / "results"
         output_dir.mkdir()
         output_file = output_dir / "tuned.bin"

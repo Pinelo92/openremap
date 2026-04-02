@@ -8,31 +8,102 @@
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
-> **Runs on your machine. No internet. No account. No data leaves your hands — ever.**
+**Open-source ECU binary identification, diffing, and patching toolkit.**
+Free alternative to the identification and binary-diff workflows locked inside WinOLS, ECM Titanium, and similar commercial tools.
 
-Drop a `.bin`, know exactly what it is. Triage a folder of hundreds. Apply a tune you can read in any text editor.
+> Runs on your machine. No internet. No account. No data leaves your hands — ever.
 
 <p align="center">
   <img src="docs/images/tui-scan.png" alt="OpenRemap TUI — Scan panel" width="820">
 </p>
 
+**Ready to try it?** Jump to [Install](#install) — one command on any platform.
+
 ---
 
-## What it does
+## The problem
 
-- **Identify** — manufacturer, ECU family, software version, hardware number, and a confidence verdict. Under a second.
-- **Scan & organise** — point at a folder of mixed binaries and sort them into `Bosch/EDC17/`, `Bosch/ME7/`, etc. in one click. Every file classified and confidence-tagged.
-- **Cook** — diff a stock and modified binary into a portable JSON recipe. Every changed byte, readable in Notepad.
-- **Tune** — validate, patch, and verify in one shot. Full audit trail baked in.
-- **Confidence scoring** — `HIGH`, `MEDIUM`, `LOW`, `SUSPICIOUS`, or `UNKNOWN` — based on signals read straight from the binary. Modified files are flagged before you touch anything.
+ECU tuners work with raw binary files — `.bin` dumps read from engine control units. Every day they need to:
 
-17 Bosch ECU families supported — from 8 KB LH-Jetronic ROMs (1982) to 8 MB EDC17 flash dumps. → [Full family reference](docs/manufacturers/bosch.md)
+1. **Figure out what a binary is** — which manufacturer, which ECU family, which software revision
+2. **Compare two binaries** — what exactly changed between a stock file and a tuned file
+3. **Apply those changes to another file** — take a known-good tune and patch it onto a different binary of the same ECU
 
-→ [How it all works in detail](docs/about.md)
+Today, these tasks require expensive commercial software (€2,500–€8,000+), or manual hex-editor work with no audit trail and no safety net.
+
+## What OpenRemap does
+
+OpenRemap is a **free, offline, open-source toolkit** that handles the binary analysis and patching pipeline:
+
+| Step | Command | What happens |
+|---|---|---|
+| **Identify** | `openremap identify ecu.bin` | Reads the binary and tells you: manufacturer, ECU family, software version, hardware number, calibration ID — plus a confidence score rating how likely the file is unmodified |
+| **Scan** | `openremap scan ./bins/` | Batch-identifies every binary in a folder. Sorts them into `Bosch/EDC17/`, `Siemens/PPD/`, etc. Flags suspicious files before you touch them |
+| **Cook** | `openremap cook stock.bin tuned.bin` | Diffs two binaries byte-by-byte and produces a `.remap` recipe — a portable JSON file listing every changed byte with context anchors. Readable in any text editor, diffable in Git |
+| **Tune** | `openremap tune target.bin recipe.remap` | Validates the recipe against the target binary, applies the patch, then verifies every byte landed correctly. All-or-nothing — partial patches never happen |
+
+### What it does NOT do
+
+- **Map editing** — OpenRemap works at the byte level, not the map level. Use WinOLS or ECM Titanium to find and edit maps. Use OpenRemap to capture, share, and reapply those edits.
+- **Checksum correction** — you must run the output through WinOLS, ECM Titanium, or equivalent before flashing. Always.
+- **ECU reading/writing** — it operates on `.bin` files you already have.
+
+---
+
+## Coverage
+
+30 extractors across 4 manufacturers, covering ECUs from 1982 to present:
+
+| Manufacturer | Families | Examples |
+|---|---|---|
+| **Bosch** (18) | EDC17, EDC16, EDC15, ME7, ME9, M5.x, M4.x, M3.x, M2.x, M1.x, MP9, ME1.5.5, LH-Jetronic, Mono-Motronic, and more | VAG TDI, BMW, Volvo, PSA, Porsche, Alfa Romeo |
+| **Siemens** (6) | SIMOS, PPD, SID 801/803, Simtec 56, EMS2000 | VAG petrol, PSA/Ford diesel, Volvo turbo |
+| **Delphi** (2) | Multec, Multec S | Opel/Vauxhall diesel and petrol |
+| **Marelli** (4) | IAW 1AV, IAW 1AP, IAW 4LV, MJD 6JF | Fiat, PSA, GM/Opel |
+
+→ Full reference: [Bosch](docs/manufacturers/bosch.md) · [Siemens](docs/manufacturers/siemens.md) · [Delphi](docs/manufacturers/delphi.md) · [Marelli](docs/manufacturers/marelli.md)
+
+---
+
+## Confidence scoring
+
+Every identification includes a confidence verdict — `HIGH`, `MEDIUM`, `LOW`, `SUSPICIOUS`, or `UNKNOWN` — built from multiple signals:
+
+- **Detection strength** — how rigorous the extractor's matching cascade is
+- **Software version format** — manufacturer-aware canonical format checking (Bosch `1037`-prefixed, Delphi 8-digit GM-style, etc.)
+- **Identity fields present** — hardware number, calibration ID, ECU variant
+- **Filename analysis** — tuning keywords (`stage2`, `dpf_off`, `egr_off`) and generic names (`1.bin`) flag suspicious files
+- **Family-aware scoring** — ECU families that architecturally lack certain fields are never penalised for their absence
+
+→ [Full scoring breakdown](docs/confidence.md)
+
+---
+
+## The recipe format
+
+The `.remap` recipe is a self-contained JSON file. Every changed byte is listed with its offset, original value, modified value, and a context anchor — 32 bytes of surrounding data that let the patcher find the right location even if the binary has shifted slightly between software revisions.
+
+Recipes are human-readable, Git-diffable, and shareable. No proprietary format, no binary blobs.
+
+→ [Recipe format specification](docs/recipe-format.md)
 
 ---
 
 ## Install
+
+Works on Windows, macOS, and Linux. One command to get started:
+
+```bash
+pip install openremap
+```
+
+Or with [uv](https://github.com/astral-sh/uv) (recommended):
+
+```bash
+uv tool install openremap
+```
+
+Detailed guides:
 
 - 🪟 **Windows** — [Step-by-step guide](docs/install/windows.md) · written for people who rarely use a terminal
 - 🍎 **macOS / 🐧 Linux** — [One-command install](docs/install/macos-linux.md)
@@ -61,10 +132,11 @@ openremap commands    # Quick reference for all available commands
 
 ## Documentation
 
+- [How it all works](docs/about.md)
 - [CLI commands overview](docs/cli.md)
 - [Confidence scoring — tiers, signals, and breakdown](docs/confidence.md)
-- [Supported Bosch ECU families](docs/manufacturers/bosch.md)
-- [Recipe JSON format](docs/recipe-format.md)
+- [Recipe format (.remap)](docs/recipe-format.md)
+- Supported families: [Bosch](docs/manufacturers/bosch.md) · [Siemens](docs/manufacturers/siemens.md) · [Delphi](docs/manufacturers/delphi.md) · [Marelli](docs/manufacturers/marelli.md)
 - [Contributing — adding extractors, code style, PRs](CONTRIBUTING.md)
 
 ---

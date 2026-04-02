@@ -21,14 +21,27 @@ from the filename.
 
 ## Example output
 
-### HIGH — looks factory-fresh
+### HIGH — Bosch EDC17, all identifiers present
 
 ```
   ── Confidence ─────────────────────────────────────
   Tier   HIGH
-  Signal  +  canonical SW version (1037-prefixed)
-  Signal  +  hardware number present (0261209352)
-  Signal  +  ECU variant identified (EDC17C66)
+  Score  75
+  Signal  +15  STRONG detection (6-phase cascade)
+  Signal  +30  canonical SW version (1037-prefixed, Bosch)
+  Signal  +20  hardware number present (0261209352)
+  Signal  +10  ECU variant identified (EDC17C66)
+```
+
+### HIGH — Delphi Multec S, all identifiers present
+
+```
+  ── Confidence ─────────────────────────────────────
+  Tier   HIGH
+  Score  65
+  Signal  +15  STRONG detection (4-phase cascade)
+  Signal  +30  canonical SW version (12345678, Delphi 8-digit GM-style)
+  Signal  +20  hardware number present (09391237)
 ```
 
 ### SUSPICIOUS — stop and check
@@ -36,8 +49,10 @@ from the filename.
 ```
   ── Confidence ─────────────────────────────────────
   Tier   SUSPICIOUS
-  Signal  -  SW ident absent — no match key produced
-  Signal  -  tuning/modification keywords in filename
+  Score  -20
+  Signal   +5  WEAK detection (minimal checks)
+  Signal  -15  SW ident absent — no match key produced
+  Signal  -25  tuning/modification keywords in filename
   ⚠  IDENT BLOCK MISSING
   ⚠  TUNING KEYWORDS IN FILENAME
 ```
@@ -49,15 +64,42 @@ from the filename.
 Each signal line shows what contributed to the tier. A `+` prefix raised
 confidence; a `-` prefix lowered it.
 
-| Signal | Direction |
+### Detection strength baseline
+
+The rigour of the extractor's `can_handle()` method sets a baseline score
+before any identity fields are examined.
+
+| Detection strength | Delta | Criteria |
+|---|---|---|
+| STRONG | +15 | 4+ phase detection cascade with unique byte signatures (e.g. Multec S, IAW 1AV) |
+| MODERATE | +10 | 2–3 phase detection (e.g. ME7.x, EDC15) |
+| WEAK | +5 | Minimal checks or broad heuristic match (e.g. M3.x, PPD) |
+
+### Software version
+
+| Signal | Delta | Notes |
+|---|---|---|
+| Canonical SW version present | +30 | Manufacturer-aware format check (see below) |
+| Non-canonical SW version present | +15 | SW found but does not match expected format |
+| SW absent, expected by family profile, no match_key | -15 | Family normally stores SW and no fallback matched |
+| SW absent, expected by family profile, match_key from fallback | -10 | Family normally stores SW but a fallback key was produced |
+| SW absent, NOT expected by family profile | 0 | Family architecturally omits SW — no penalty |
+
+### Other identity fields
+
+| Signal | Delta |
 |---|---|
-| SW version present and canonical (`1037`-prefixed for Bosch) | `+` |
-| Hardware number present | `+` |
-| ECU variant identified | `+` |
-| Calibration ID present | `+` |
-| SW version absent for a family that normally stores it | `-` |
-| Tuning keywords in filename (`stage`, `remap`, `tuned`, `disable`, …) | `-` |
-| Generic numbered filename (`1.bin`, `42.bin`, …) | `-` |
+| Hardware number present | +20 |
+| OEM part number present | +5 |
+| ECU variant identified | +10 |
+| Calibration ID present | +10 |
+
+### Filename signals
+
+| Signal | Delta |
+|---|---|
+| Tuning keywords in filename (`stage`, `remap`, `tuned`, `disable`, …) | -25 |
+| Generic numbered filename (`1.bin`, `42.bin`, …) | -15 |
 
 ---
 
@@ -80,9 +122,9 @@ raw numeric score, which is then mapped to a tier:
 
 | Score range | Tier |
 |---|---|
-| ≥ 60 | HIGH |
-| 30 – 59 | MEDIUM |
-| 0 – 29 | LOW |
+| ≥ 55 | HIGH |
+| 25 – 54 | MEDIUM |
+| 0 – 24 | LOW |
 | < 0 | SUSPICIOUS |
 | no extractor matched | UNKNOWN |
 
@@ -91,13 +133,65 @@ The raw score is available in JSON output (`openremap identify --json`) under
 
 ---
 
-## Manufacturer-agnostic design
+## Family field profiles
 
-The confidence system is **manufacturer-agnostic** — any extractor registered
-in the system gets scoring automatically. The `1037`-prefix check is
-Bosch-specific; for all other manufacturers, any software version present earns
-the canonical SW version signal. All other signals apply equally across every
-supported family.
+Each ECU family declares a **field profile** — the set of identity fields that
+the ECU architecturally stores in its binary. Fields not in the profile are
+never penalized when absent.
+
+For example, the IAW 1AP family only stores a calibration fingerprint. It does
+not contain a discrete software version or hardware number in the binary. Under
+the old scoring system this absence would have incurred penalties, dragging the
+tier down unfairly. With field profiles, the absence of SW and HW for IAW 1AP
+scores **0** instead of a penalty, allowing these families to reach their
+natural tier based on the fields they *do* provide.
+
+Families like Bosch EDC17 or ME7 declare SW, HW, variant, and calibration
+in their profile — so all four are expected and scored accordingly. A family
+like EMS2000 that only stores a variant and calibration will not be penalized
+for missing SW or HW.
+
+---
+
+## Detection strength
+
+The extractor's `can_handle()` method varies in rigour across families. A
+6-phase detection cascade that checks magic bytes, block boundaries, address
+maps, and internal checksums provides much stronger evidence of a correct match
+than a 2-phase heuristic that only checks file size and a single byte pattern.
+
+The detection strength baseline reflects this difference:
+
+- **STRONG** (+15): Extractors like Multec S and IAW 1AV run 4+ independent
+  checks with unique byte signatures. A match is very likely correct.
+- **MODERATE** (+10): Extractors like ME7.x and EDC15 use 2–3 checks — solid
+  but not exhaustive.
+- **WEAK** (+5): Extractors like M3.x and PPD rely on minimal or broad
+  heuristics. A match is plausible but less certain.
+
+---
+
+## Manufacturer-aware scoring
+
+The confidence system is **manufacturer-aware** — each manufacturer has its own
+canonical software version pattern, and each ECU family declares its own field
+profile. This ensures that all manufacturers can reach HIGH tier when their
+binaries contain the expected identifiers.
+
+### Canonical SW version formats by manufacturer
+
+| Manufacturer | Canonical format | Examples |
+|---|---|---|
+| **Bosch** | Prefixed with `1037`, `1039`, `1267`, `1277`, `2227`, or `2537` | `1037374218`, `1039S65581` |
+| **Delphi** | 8-digit GM-style SW number | `12345678`, `09391237` |
+| **Siemens** | 9-digit serial or `5WK9`-prefixed | `5WK91234A`, `123456789` |
+| **Magneti Marelli** | Family-specific short formats | varies by ECU family |
+
+Any SW version that matches its manufacturer's canonical format earns +30.
+A SW version that is present but does not match the expected format earns +15.
+This replaces the previous approach where only Bosch `1037`-prefixed versions
+received the full canonical bonus and all other manufacturers were capped at
+the non-canonical score.
 
 ---
 

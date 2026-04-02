@@ -6,10 +6,10 @@ openremap validate after   <tuned>  <recipe>
 Validate ECU binaries against a recipe before or after tuning.
 
 Examples:
-    openremap validate before target.bin recipe.json
-    openremap validate check  target.bin recipe.json
-    openremap validate after  target_tuned.bin recipe.json
-    openremap validate before target.bin recipe.json --json
+    openremap validate before target.bin recipe.openremap
+    openremap validate check  target.bin recipe.openremap
+    openremap validate after  target_tuned.bin recipe.openremap
+    openremap validate before target.bin recipe.openremap --json
 
 Deprecated aliases (still work, hidden from --help):
     openremap validate strict  →  openremap validate before
@@ -85,11 +85,11 @@ def _read_bin(path: Path, label: str) -> bytes:
 
 
 def _read_recipe(path: Path) -> dict:
-    """Read and parse a recipe JSON file."""
-    if not path.suffix.lower() == ".json":
+    """Read and parse a recipe .openremap (or legacy .json) file."""
+    if path.suffix.lower() not in (".openremap", ".json"):
         typer.echo(
             typer.style(
-                f"Error: Recipe file '{path.name}' must be a .json file.",
+                f"Error: Recipe file '{path.name}' must be a .openremap or .json file.",
                 fg=typer.colors.RED,
                 bold=True,
             ),
@@ -531,7 +531,7 @@ def before(
     ),
     recipe: Path = typer.Argument(
         ...,
-        help="The recipe .json file to validate against.",
+        help="The recipe .openremap file to validate against.",
         exists=True,
         file_okay=True,
         dir_okay=False,
@@ -580,7 +580,7 @@ def check(
     ),
     recipe: Path = typer.Argument(
         ...,
-        help="The recipe .json file to validate against.",
+        help="The recipe .openremap file to validate against.",
         exists=True,
         file_okay=True,
         dir_okay=False,
@@ -629,7 +629,7 @@ def after(
     ),
     recipe: Path = typer.Argument(
         ...,
-        help="The recipe .json file used during tuning.",
+        help="The recipe .openremap file used during tuning.",
         exists=True,
         file_okay=True,
         dir_okay=False,

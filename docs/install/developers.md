@@ -80,6 +80,8 @@ pytest
 
 Run `deactivate` to leave the environment, or just close the terminal.
 
+> 💡 For interactive use, just run `openremap` (or `uv run openremap`) with no arguments to launch the TUI.
+
 ---
 
 ## Running the test suite
@@ -91,7 +93,7 @@ uv run pytest core/tests/ -q
 All tests must pass before submitting a pull request. Expected output on a clean install:
 
 ```
-842 passed in X.XXs
+4,734 passed in X.XXs
 ```
 
 To run a specific test file:

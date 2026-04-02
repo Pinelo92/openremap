@@ -36,7 +36,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.me7.patterns import (
     DETECTION_SIGNATURES,
     EXCLUSION_SIGNATURES,
@@ -55,6 +58,8 @@ class BoschME7Extractor(BaseManufacturerExtractor):
     Extractor for Bosch Motronic ME7 ECU binaries.
     Handles: ME7, ME7.0, ME71, ME7.1, ME7.1.1, ME7.5, ME7.5.5, ME7.5.10
     """
+
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

@@ -378,3 +378,10 @@ EXCLUSION_SIGNATURES: list[bytes] = [
 #   0x040000 — 256KB    : EDC16 sector/active-section-only dump
 #   0x0F0000 — 983040   : EDC16C31/C35 truncated (missing first 64KB boot sector)
 SUPPORTED_SIZES: set[int] = {0x100000, 0x200000, 0x80000, 0x40000, 0xF0000}
+
+# Maximum number of trailing bytes to tolerate beyond a known supported size.
+# Read tools occasionally append CR+LF (2 bytes), padding, or checksums at
+# the end of a flash dump.  A tolerance of 256 bytes is generous enough to
+# cover all known artifacts without being wide enough to confuse genuinely
+# different file formats.
+SIZE_TOLERANCE: int = 256

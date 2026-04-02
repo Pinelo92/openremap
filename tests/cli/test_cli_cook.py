@@ -1,5 +1,5 @@
 """
-Tests for ``openremap cook <original> <modified> [--output <recipe.json>]`.
+Tests for ``openremap cook <original> <modified> [--output <recipe.openremap>]`.
 
 Runs every scenario through the real CLI via typer.testing.CliRunner.
 No mocking — all files are created in pytest's tmp_path fixture.
@@ -68,7 +68,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(data)
         modified.write_bytes(data)
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         result = runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -85,7 +85,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         result = runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -114,7 +114,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {200: 0xFF}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         result = runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -132,7 +132,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         result = runner.invoke(
             app,
@@ -160,7 +160,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         result = runner.invoke(
             app,
@@ -186,7 +186,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.ori"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         result = runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -200,7 +200,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -216,7 +216,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -235,7 +235,7 @@ class TestCookSuccess:
         original.write_bytes(_make_bin(1024))
         # Change byte at offset 100 from 0x00 to 0xAA
         modified.write_bytes(_make_bin(1024, {100: 0xAA}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -252,7 +252,7 @@ class TestCookSuccess:
         # Original has 0x00 at offset 100; modified has 0xAA there.
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -272,7 +272,7 @@ class TestCookSuccess:
         modified = tmp_path / "tuned.bin"
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA, 500: 0xBB}))
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         result = runner.invoke(
             app, ["cook", str(original), str(modified), "--output", str(output)]
@@ -355,7 +355,7 @@ class TestCookEdgeCases:
         """Cook can handle very small binary files (e.g., 1 byte)."""
         original = tmp_path / "original.bin"
         modified = tmp_path / "modified.bin"
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         original.write_bytes(b"\x00")
         modified.write_bytes(b"\xff")
@@ -375,7 +375,7 @@ class TestCookEdgeCases:
         size = 10 * 1024 * 1024
         original = tmp_path / "original.bin"
         modified = tmp_path / "modified.bin"
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         original.write_bytes(_make_bin(size))
         modified.write_bytes(_make_bin(size, {100: 0xAA}))
@@ -392,7 +392,7 @@ class TestCookEdgeCases:
         data = _make_bin(1024)
         original = tmp_path / "original.bin"
         modified = tmp_path / "modified.bin"
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         original.write_bytes(data)
         modified.write_bytes(data)
@@ -410,7 +410,7 @@ class TestCookEdgeCases:
         """Cook handles files of different sizes."""
         original = tmp_path / "original.bin"
         modified = tmp_path / "modified.bin"
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(2048))  # Different size
@@ -429,7 +429,7 @@ class TestCookEdgeCases:
         """Cook correctly handles recipes with many changes."""
         original = tmp_path / "original.bin"
         modified = tmp_path / "modified.bin"
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         original_data = _make_bin(1024)
         patches = {i * 10: 0xFF for i in range(100)}  # 100 changes
@@ -460,7 +460,7 @@ class TestCookEdgeCases:
         # because the path already exists as a regular file.
         parent_is_file = tmp_path / "somefile.bin"
         parent_is_file.write_bytes(b"\x00")
-        output = parent_is_file / "recipe.json"  # parent is a file, not a dir
+        output = parent_is_file / "recipe.openremap"  # parent is a file, not a dir
 
         result = runner.invoke(
             app,
@@ -474,7 +474,7 @@ class TestCookEdgeCases:
         """Cooked recipe statistics are accurate."""
         original = tmp_path / "original.bin"
         modified = tmp_path / "modified.bin"
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
 
         original.write_bytes(_make_bin(1024))
         modified.write_bytes(_make_bin(1024, {100: 0xAA, 200: 0xBB}))
@@ -619,7 +619,7 @@ class TestCookReadAndWriteErrors:
 
         original = tmp_path / "stock.bin"
         modified = tmp_path / "tuned.bin"
-        output = tmp_path / "recipe.json"
+        output = tmp_path / "recipe.openremap"
         original.write_bytes(b"\x00" * 1024)
         modified.write_bytes(b"\x01" * 1024)  # one byte differs → one instruction
 

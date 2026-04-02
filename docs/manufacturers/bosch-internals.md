@@ -14,11 +14,12 @@ bosch/
 ├── edc1/          — EDC1 / EDC2
 ├── edc15/         — EDC15 (Format A + B + C / Volvo EDC15C3)
 ├── edc16/         — EDC16 (VAG C8/C39/PD, BMW C31/C35, Opel C9)
-├── edc17/         — EDC17 / MEDC17 / MED17 / ME17
+├── edc17/         — EDC17 / MEDC17 / MED17 / ME17 / MD1
 ├── edc3x/         — EDC 3.x (VAG HEX, BMW numeric, Opel cal block)
 ├── lh/            — LH-Jetronic
 ├── m1x/           — M1.x (BMW E28/E30/E34/E36, Opel petrol)
 ├── m1x55/         — M1.55 (Alfa Romeo)
+├── me155/         — ME1.5.5 (Alfa Romeo/Fiat petrol)
 ├── m2x/           — M2.x (VW/Audi M2.9, Porsche M2.3, Opel M2.7/M2.8/M2.81)
 ├── m3x/           — M3.x (BMW M3.1/M3.3 and PSA/Citroën MP3.2/MP7.2)
 ├── m4x/           — M4.x (Volvo 850/960/S70/V70/S60/S80 petrol)
@@ -26,6 +27,7 @@ bosch/
 ├── mp9/           — MP9 (Motronic MP 9.0)
 ├── me7/           — ME7 / ME7.x (including ME7.6.2 for Opel Corsa D)
 ├── me9/           — ME9 (full flash, RamLoader)
+├── mono/          — Mono-Motronic (single-point injection)
 └── motronic_legacy/  — DME-3.2, M1.x-early, KE-Jetronic, EZK
 ```
 
@@ -37,16 +39,31 @@ The registry in `bosch/__init__.py` lists all extractors in priority order — m
 
 ### Software version bonus
 
-The `+40` canonical SW bonus is awarded when `software_version` starts with `"1037"` **or** `"1039"`:
+The `+30` canonical SW bonus is awarded when `software_version` matches a manufacturer-aware canonical SW regex:
 
 ```/dev/null/confidence-rules.txt#L1-2
-+40  software_version starts with "1037", "1039", or "1277"   (EDC15, EDC16, EDC17, ME7, ME9, …)
++30  software_version matches canonical SW pattern             (EDC15, EDC16, EDC17, ME7, ME9, …)
 +15  software_version present but non-canonical                (M2.x uses 1267/2227; M3.x uses 1267/2227; EDC3x uses cal numbers)
 ```
 
 The `1039` prefix is used by PSA/Peugeot-Citroën EDC16C34 variants (e.g. Peugeot 3008 1.6 HDI, SW `1039398238`). The `1277` prefix is used by Italian-market ME7.3 variants (e.g. Ferrari 360, SW `1277356302`). Both are treated as equally canonical as `1037`.
 
 M2.x, M3.x, and EDC 3.x families always produce the `+15` signal — their SW versions never begin with `1037`/`1039`/`1277` and that is expected, not a defect.
+
+> **Note:** The confidence system now uses manufacturer-aware canonical SW recognition and detection strength baselines — see [confidence.md](../confidence.md) for full details.
+
+### Hardware number bonus
+
+The `+20` hardware number bonus is awarded when `hardware_number` is present in the identification result.
+
+### Tier thresholds
+
+| Tier | Score |
+|---|---|
+| **High** | ≥ 55 |
+| **Medium** | 30–54 |
+| **Low** | 10–29 |
+| **Suspicious** | < 10 or conflicting signals |
 
 ### IDENT BLOCK MISSING warning
 

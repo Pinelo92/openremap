@@ -202,7 +202,7 @@ uv run openremap identify your_binary.bin
 Then cook a recipe from a stock and a modified binary to verify the `ecu` block is populated correctly:
 
 ```bash
-uv run openremap cook stock.bin modified.bin --output recipe.json
+uv run openremap cook stock.bin modified.bin --output recipe.remap
 ```
 
 ### Tips for writing a good `can_handle()`

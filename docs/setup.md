@@ -68,7 +68,7 @@ Run these three commands in order. All three must succeed.
 
 ```bash
 openremap --version    # prints the version number
-openremap workflow     # prints the step-by-step guide without errors
+openremap              # launches the TUI — confirm it opens without errors
 openremap scan .       # dry-run scan of the current folder, nothing moves
 ```
 

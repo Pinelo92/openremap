@@ -1,7 +1,9 @@
 # CLI Reference
 
-Full reference for the `openremap` command-line tool. No server, no database,
-no internet connection required — install and run anywhere.
+Full reference for the `openremap` command-line interface. For interactive use,
+just run `openremap` with no arguments to launch the TUI.
+
+No server, no database, no internet connection required — install and run anywhere.
 
 > **New to the terminal?** Run `openremap workflow` first. It prints a complete
 > plain-English walkthrough with the exact commands to type and what to look for
@@ -79,13 +81,13 @@ openremap scan ./my_bins/ --move --organize  # sort into Bosch/EDC17/ etc.
 openremap identify stock.bin
 
 # 2. Extract the tune — diff stock vs tuned and save as a recipe
-openremap cook stock.bin stage1.bin --output recipe.json
+openremap cook stock.bin stage1.bin --output recipe.remap
 
 # 3. One-shot: validate before → apply → validate after
-openremap tune target.bin recipe.json
+openremap tune target.bin recipe.remap
 
 # If tune fails at Phase 1 — diagnose why
-openremap validate check target.bin recipe.json
+openremap validate check target.bin recipe.remap
 
 # 4. MANDATORY — correct checksums with ECM Titanium, WinOLS, or equivalent
 #    before flashing the tuned binary to any vehicle
@@ -99,8 +101,11 @@ openremap validate check target.bin recipe.json
 |---|---|
 | [`docs/commands/`](commands/) | Per-command reference — arguments, options, examples, example output |
 | [`docs/confidence.md`](confidence.md) | Confidence scoring — tiers, signals, warnings, and score breakdown |
-| [`docs/manufacturers/bosch.md`](manufacturers/bosch.md) | Supported ECU families in detail — ident formats, file sizes, SW/HW layout |
+| [`docs/manufacturers/bosch.md`](manufacturers/bosch.md) | Supported Bosch ECU families — ident formats, file sizes, SW/HW layout |
+| [`docs/manufacturers/siemens.md`](manufacturers/siemens.md) | Supported Siemens ECU families |
+| [`docs/manufacturers/delphi.md`](manufacturers/delphi.md) | Supported Delphi ECU families |
+| [`docs/manufacturers/marelli.md`](manufacturers/marelli.md) | Supported Magneti Marelli ECU families |
 | [`docs/about.md`](about.md) | How it works — the recipe format, the match key, use cases, FAQ |
-| [`docs/recipe-format.md`](recipe-format.md) | The recipe JSON spec — fields, structure, versioning |
+| [`docs/recipe-format.md`](recipe-format.md) | The recipe format spec (.remap) — fields, structure, versioning |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | How to add a new ECU extractor, code style, submitting a PR |
 | [`DISCLAIMER.md`](../DISCLAIMER.md) | Liability, intended use, professional review requirements |

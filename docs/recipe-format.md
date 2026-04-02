@@ -1,6 +1,6 @@
 # Recipe Format
 
-A recipe is a plain JSON file that captures every byte-level change between an original and a modified ECU binary. It is the central data structure of the entire OpenRemap pipeline — produced by `openremap cook`, consumed by every validate and patch command.
+A recipe is a JSON file with the `.remap` extension that captures every byte-level change between an original and a modified ECU binary. It is the central data structure of the entire OpenRemap pipeline — produced by `openremap cook`, consumed by every validate and patch command.
 
 Recipes are fully portable between the CLI and the API. A recipe cooked on the command line can be applied through the API and vice versa.
 

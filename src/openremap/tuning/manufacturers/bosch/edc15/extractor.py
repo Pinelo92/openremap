@@ -65,7 +65,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.edc15.patterns import (
     DETECTION_SIGNATURES,
     EDC15_FORMAT_E_IDENT_RE,
@@ -94,6 +97,7 @@ class BoschEDC15Extractor(BaseManufacturerExtractor):
     # Opt in: when software_version is absent (Format C / Volvo EDC15C3),
     # use calibration_id as the version component of the match key.
     match_key_fallback_field = "calibration_id"
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

@@ -84,7 +84,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional, Tuple
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Detection signatures
@@ -148,6 +151,8 @@ class BoschM2xExtractor(BaseManufacturerExtractor):
       Format D (Opel M2.7): b'dx<HW_reversed><SW_reversed>'
       Format E (VW VR6):    '<VAG_PART>    MOTOR    <engine_desc>PMC...PMC...<HW><SW>'
     """
+
+    detection_strength = DetectionStrength.MODERATE
 
     # -----------------------------------------------------------------------
     # Identity

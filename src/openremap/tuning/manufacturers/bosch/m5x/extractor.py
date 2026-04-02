@@ -95,7 +95,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.m5x.patterns import (
     DETECTION_SIGNATURES,
     EXCLUSION_SIGNATURES,
@@ -117,6 +120,8 @@ class BoschM5xExtractor(BaseManufacturerExtractor):
     All identification data is extracted from the single slash-delimited
     ASCII ident string located in the first 64KB of the binary.
     """
+
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

@@ -1,12 +1,12 @@
 """
-openremap cook <original> <modified> --output recipe.json
+openremap cook <original> <modified> --output recipe.openremap
 
 Cook a recipe by diffing an original and a modified ECU binary.
 
 Examples:
-    openremap cook stock.bin stage1.bin --output recipe.json
-    openremap cook stock.bin stage1.bin --output recipe.json --pretty
-    openremap cook stock.bin stage1.bin --context-size 64 --output recipe.json
+    openremap cook stock.bin stage1.bin --output recipe.openremap
+    openremap cook stock.bin stage1.bin --output recipe.openremap --pretty
+    openremap cook stock.bin stage1.bin --context-size 64 --output recipe.openremap
 """
 
 from __future__ import annotations
@@ -144,7 +144,7 @@ def cook(
         "--output",
         "-o",
         help=(
-            "File path to write the recipe JSON to. "
+            "File path to write the recipe to (use .openremap extension). "
             "If omitted, the recipe is printed to stdout."
         ),
         writable=True,

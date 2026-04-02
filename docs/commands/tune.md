@@ -41,7 +41,7 @@ openremap tune <TARGET> <RECIPE> [OPTIONS]
 | Argument | Required | Description |
 |---|---|---|
 | `TARGET` | Yes | The untuned ECU binary to apply the recipe to. Must end in `.bin` or `.ori`. |
-| `RECIPE` | Yes | The recipe `.json` file produced by `openremap cook`. |
+| `RECIPE` | Yes | The recipe `.remap` file produced by `openremap cook`. |
 
 ---
 
@@ -61,22 +61,22 @@ openremap tune <TARGET> <RECIPE> [OPTIONS]
 
 ```bash
 # Apply a tune — all three phases run automatically
-openremap tune target.bin recipe.json
+openremap tune target.bin recipe.remap
 
 # Specify where to write the tuned binary
-openremap tune target.bin recipe.json --output my_tuned.bin
+openremap tune target.bin recipe.remap --output my_tuned.bin
 
 # Save the combined three-phase report as JSON
-openremap tune target.bin recipe.json --report tune_report.json
+openremap tune target.bin recipe.remap --report tune_report.json
 
 # Save both the tuned binary and the report
-openremap tune target.bin recipe.json --output my_tuned.bin --report my_report.json
+openremap tune target.bin recipe.remap --output my_tuned.bin --report my_report.json
 
 # Skip Phases 1 and 3 (scripted pipelines only)
-openremap tune target.bin recipe.json --skip-validation
+openremap tune target.bin recipe.remap --skip-validation
 
 # Print the full three-phase report as JSON to the screen
-openremap tune target.bin recipe.json --json
+openremap tune target.bin recipe.remap --json
 ```
 
 ---
@@ -86,7 +86,7 @@ openremap tune target.bin recipe.json --json
 ### All three phases passed
 
 ```
-  openremap tune  target.bin  +  recipe.json
+  openremap tune  target.bin  +  recipe.remap
 
   ──────────────────────────────────────────────────────────
   Phase 1 — Pre-flight check  (validate before)
@@ -132,7 +132,7 @@ openremap tune target.bin recipe.json --json
 ### Phase 1 failed — nothing written
 
 ```
-  openremap tune  target.bin  +  recipe.json
+  openremap tune  target.bin  +  recipe.remap
 
   ──────────────────────────────────────────────────────────
   Phase 1 — Pre-flight check  (validate before)
@@ -184,7 +184,7 @@ search. Phase 3 still runs to confirm every byte landed correctly.
 |---|---|
 | `✅ Tune complete` — all three phases green | Correct checksums, then flash. |
 | `Shifted` count in Phase 2 | Maps recovered via ±2 KB search — inspect the tuned binary carefully before flashing. |
-| Phase 1 fails: `❌ NOT safe to apply` | Run `openremap validate check target.bin recipe.json` to find out whether the maps shifted or you have the wrong ECU. |
+| Phase 1 fails: `❌ NOT safe to apply` | Run `openremap validate check target.bin recipe.remap` to find out whether the maps shifted or you have the wrong ECU. |
 | Phase 2 fails: apply error | Run `openremap validate check` to diagnose. Do not flash the output. |
 | Phase 3 fails: `❌ Post-tune verification failed` | Do not flash. Re-run `openremap tune` or investigate with `openremap validate check`. |
 
@@ -227,13 +227,13 @@ same underlying logic:
 
 ```bash
 # Phase 1 only — pre-flight check
-openremap validate before target.bin recipe.json
+openremap validate before target.bin recipe.remap
 
 # Diagnostic — why did Phase 1 fail?
-openremap validate check target.bin recipe.json
+openremap validate check target.bin recipe.remap
 
 # Phase 3 only — post-tune confirmation
-openremap validate after target_tuned.bin recipe.json --json --output verify.json
+openremap validate after target_tuned.bin recipe.remap --json --output verify.json
 ```
 
 See [validate.md](validate.md) for the full reference.

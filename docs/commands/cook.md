@@ -6,8 +6,8 @@ new value (`mb`), and a short context anchor (`ctx`) that is used to find
 the right location even if the offset has shifted slightly in a different
 software revision.
 
-The result is saved as a JSON recipe file. That recipe is the input for all
-`validate` and `tune` commands.
+The result is saved as a recipe file with the `.remap` extension. That recipe
+is the input for all `validate` and `tune` commands.
 
 ---
 
@@ -45,17 +45,17 @@ The order matters — `ORIGINAL` always comes first, `MODIFIED` second.
 
 ```bash
 # Cook a recipe and save it to a file
-openremap cook stock.bin stage1.bin --output recipe.json
+openremap cook stock.bin stage1.bin --output recipe.remap
 
 # Cook and print the recipe to the screen (useful for inspection)
 openremap cook stock.bin stage1.bin
 
 # Use a wider context window — recommended when you plan to apply the recipe
 # to ECUs that may be on a slightly different software revision
-openremap cook stock.bin stage1.bin --context-size 64 --output recipe.json
+openremap cook stock.bin stage1.bin --context-size 64 --output recipe.remap
 
 # Compact output — smaller file, harder to read
-openremap cook stock.bin stage1.bin --compact --output recipe.json
+openremap cook stock.bin stage1.bin --compact --output recipe.remap
 ```
 
 ---
@@ -75,7 +75,7 @@ openremap cook stock.bin stage1.bin --compact --output recipe.json
   Original               stock.bin
   Modified               stage1.bin
 
-  Recipe saved to recipe.json
+  Recipe saved to recipe.remap
 ```
 
 ---

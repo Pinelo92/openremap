@@ -69,7 +69,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.m4x.patterns import (
     DETECTION_SIGNATURES,
     EXCLUSION_SIGNATURES,
@@ -118,6 +121,7 @@ class BoschM4xExtractor(BaseManufacturerExtractor):
 
     # Opt-in fallback — use calibration_id when software_version is absent.
     match_key_fallback_field: Optional[str] = "calibration_id"
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

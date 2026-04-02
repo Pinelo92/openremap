@@ -63,6 +63,21 @@ openremap families -f lh-jetronic
   LH-Jetronic             1982–1995       8–64 KB           Volvo, BMW, Mercedes fuel injection.
   Motronic Legacy         various         2–32 KB           DME-3.2, M1.x-early, KE-Jetronic, EZK.
   ─────────────────────────────────────────────────────────────────────────────
+  Simtec 56               1995–2002       128 KB            Opel/Vauxhall Vectra B, Astra, Omega B. Siemens.
+  SIMOS                   1998–2006       128–512 KB        VAG 1.4–1.6L petrol. Siemens.
+  PPD1.x                  2003–2008       250 KB–2 MB       VAG 2.0 TDI Pumpe-Düse diesel. Siemens.
+  SID 801 / SID 801A      2001–2006       512 KB            PSA 2.0/2.2 HDi diesel. Siemens.
+  SID 803 / SID 803A      2005–2010       458 KB–2 MB       PSA/Ford/JLR HDi diesel. Siemens.
+  EMS2000                 1996–2004       256 KB            Volvo S40/V40/S60/S70 T4/T5 turbo. Siemens.
+  ─────────────────────────────────────────────────────────────────────────────
+  Multec                  1998–2006       208–256 KB        Opel/Vauxhall 1.7 DTI/TD diesel. Delphi.
+  Multec S                1996–2003       128 KB            Opel/Vauxhall Astra G, Corsa B/C petrol. Delphi.
+  ─────────────────────────────────────────────────────────────────────────────
+  IAW 1AV                 1996–2003       64 KB             VAG 1.0–1.6L NA petrol. Magneti Marelli.
+  IAW 1AP                 1996–2002       64 KB             PSA Peugeot 106/206, Citroën Saxo/C3. Magneti Marelli.
+  IAW 4LV                 2000s           512 KB            VAG Skoda Fabia 1.4 16V. Magneti Marelli.
+  MJD 6JF                 2006–2015       448–452 KB        Opel Corsa D/E 1.3 CDTI diesel. Magneti Marelli.
+  ─────────────────────────────────────────────────────────────────────────────
 
   openremap families --family <NAME>   show full detail for one family
   openremap identify <FILE>            identify an ECU binary
@@ -140,6 +155,18 @@ The `--family` option accepts the canonical name or any of the listed aliases
 | M5.x / M3.8x | `m5x`, `m5.x`, `m3.8x`, `m3.8` |
 | LH-Jetronic | `lh`, `lh-jetronic`, `lhjetronic` |
 | Motronic Legacy | `motronic`, `motronic_legacy`, `ke-jetronic`, `ezk`, `dme` |
+| Simtec 56 | `simtec56`, `simtec` |
+| SIMOS | `simos`, `simos2`, `simos3` |
+| PPD1.x | `ppd`, `ppd1`, `ppd1.1`, `ppd1.2`, `ppd1.5` |
+| SID 801 / SID 801A | `sid801`, `sid801a` |
+| SID 803 / SID 803A | `sid803`, `sid803a` |
+| EMS2000 | `ems2000`, `ems`, `fenix5` |
+| Multec | `multec` |
+| Multec S | `multecs`, `multec-s`, `multec_s` |
+| IAW 1AV | `iaw1av`, `1av` |
+| IAW 1AP | `iaw1ap`, `1ap` |
+| IAW 4LV | `iaw4lv`, `4lv` |
+| MJD 6JF | `mjd6jf`, `6jf`, `mjd` |
 
 ---
 
@@ -148,9 +175,9 @@ The `--family` option accepts the canonical name or any of the listed aliases
 - `openremap families` shows the same families that `openremap identify`
   recognises. If a binary is classified as `unknown`, its ECU family is not
   yet supported — see `CONTRIBUTING.md` to add support.
-- For the complete technical detail on ident formats, file sizes, and binary
-  layouts for Bosch ECUs, see
-  [`docs/manufacturers/bosch.md`](../manufacturers/bosch.md).
+- For complete technical details on ident formats, file sizes, and binary
+  layouts, see the manufacturer reference pages:
+  [Bosch](../manufacturers/bosch.md) · [Siemens](../manufacturers/siemens.md) · [Delphi](../manufacturers/delphi.md) · [Marelli](../manufacturers/marelli.md).
 
 ---
 

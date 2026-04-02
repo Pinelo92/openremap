@@ -94,11 +94,11 @@ def _pick_file(
     elif mode == "json":
         zenity_filter = [
             "--file-filter",
-            "Recipe JSON | *.json",
+            "Recipe | *.openremap *.json",
             "--file-filter",
             "All files | *",
         ]
-        kdialog_filter = "*.json"
+        kdialog_filter = "*.openremap *.json"
     else:
         zenity_filter = ["--file-filter", "All files | *"]
         kdialog_filter = "*"
@@ -179,7 +179,7 @@ def _pick_file(
         if mode == "bin":
             filetypes = [("ECU binaries", "*.bin *.ori"), ("All files", "*.*")]
         elif mode == "json":
-            filetypes = [("Recipe JSON", "*.json"), ("All files", "*.*")]
+            filetypes = [("Recipe", "*.openremap *.json"), ("All files", "*.*")]
         else:
             filetypes = [("All files", "*.*")]
 
@@ -309,7 +309,7 @@ def _openremap_dir() -> Path:
 
 
 def _recipes_dir() -> Path:
-    """Return (and create if needed) OpenRemap/recipes — default home for recipe JSON files."""
+    """Return (and create if needed) OpenRemap/recipes — default home for recipe files."""
     folder = _openremap_dir() / "recipes"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
@@ -351,13 +351,13 @@ def _pick_save_file(
     if mode == "json":
         zenity_filter = [
             "--file-filter",
-            "Recipe JSON | *.json",
+            "Recipe | *.openremap",
             "--file-filter",
             "All files | *",
         ]
-        kdialog_filter = "*.json"
-        tk_filetypes = [("Recipe JSON", "*.json"), ("All files", "*.*")]
-        tk_defaultext = ".json"
+        kdialog_filter = "*.openremap"
+        tk_filetypes = [("Recipe", "*.openremap"), ("All files", "*.*")]
+        tk_defaultext = ".openremap"
     else:
         zenity_filter = [
             "--file-filter",
@@ -637,7 +637,7 @@ class FilePickedForValidateRecipe(Message):
 
 _DEST_CELL: dict[str, Text] = {
     DEST_SCANNED: Text("✓  scanned", style="bold green"),
-    DEST_SW_MISSING: Text("⚠  review", style="bold yellow"),
+    DEST_SW_MISSING: Text("⚠  unmatched", style="bold yellow"),
     DEST_CONTESTED: Text("✗  contested", style="bold red"),
     DEST_UNKNOWN: Text("?  unknown", style="dim"),
     DEST_TRASH: Text("⌫  unsupported", style="dim"),
@@ -824,9 +824,7 @@ class IdentifyPanel(Vertical):
             ),
             (
                 "SHA-256",
-                (result.get("sha256") or "")[:24] + "…"
-                if result.get("sha256")
-                else None,
+                result.get("sha256") or None,
             ),
         ]
 
@@ -1056,12 +1054,17 @@ class ScanPanel(Vertical):
         classified: list[tuple[Path, ScanResult]] = []
 
         for i, f in enumerate(files, 1):
-            self.post_message(ScanProgress(i, total, f.name))
+            rel_name = (
+                str(f.relative_to(directory))
+                if str(f).startswith(str(directory))
+                else f.name
+            )
+            self.post_message(ScanProgress(i, total, rel_name))
 
             # Case-insensitive extension check — .BIN / .ORI are accepted.
             ext = f.suffix.lower()
             if ext not in VALID_EXTENSIONS:
-                rows.append((f.name, {}, None))
+                rows.append((rel_name, {}, None))
                 classified.append(
                     (f, ScanResult([], None, None, DEST_TRASH, "unsupported extension"))
                 )
@@ -1070,7 +1073,7 @@ class ScanPanel(Vertical):
             try:
                 data = f.read_bytes()
                 if not data:
-                    rows.append((f.name, {}, None))
+                    rows.append((rel_name, {}, None))
                     classified.append(
                         (f, ScanResult([], None, None, DEST_TRASH, "empty file"))
                     )
@@ -1078,10 +1081,10 @@ class ScanPanel(Vertical):
                 result = identify_ecu(data=data, filename=f.name)
                 confidence = score_identity(result, filename=f.name)
                 scan_result = classify_file(data=data, filename=f.name)
-                rows.append((f.name, result, confidence))
+                rows.append((rel_name, result, confidence))
                 classified.append((f, scan_result))
             except Exception:
-                rows.append((f.name, {}, None))
+                rows.append((rel_name, {}, None))
                 # Create a minimal unknown result so the two lists stay in sync
                 classified.append(
                     (f, ScanResult([], None, None, DEST_UNKNOWN, "read error"))
@@ -1120,7 +1123,7 @@ class ScanPanel(Vertical):
 
                 elif scan_result.destination == DEST_SW_MISSING:
                     mfr = _safe_folder_name(extraction.get("manufacturer") or "Unknown")
-                    dest = ecus / mfr / "Review"
+                    dest = ecus / mfr / "Unmatched"
 
                 elif scan_result.destination == DEST_CONTESTED:
                     dest = ecus / "Contested"
@@ -1220,7 +1223,7 @@ class CookPanel(Vertical):
                 with Vertical(classes="field-col-last"):
                     yield Static("Output recipe", classes="field-label")
                     yield Input(
-                        placeholder="/path/to/recipe.json", id="cook-output-input"
+                        placeholder="/path/to/recipe.openremap", id="cook-output-input"
                     )
                     yield Button(
                         "💾  Save as…",
@@ -1276,7 +1279,7 @@ class CookPanel(Vertical):
         # Auto-fill output into the OpenRemap folder if still empty
         out_input = self.query_one("#cook-output-input", Input)
         if not out_input.value.strip():
-            default = _recipes_dir() / (message.path.stem + "_recipe.json")
+            default = _recipes_dir() / (message.path.stem + "_recipe.openremap")
             out_input.value = str(default)
 
     @on(FilePickedForCookMod)
@@ -1344,9 +1347,9 @@ class CookPanel(Vertical):
             suggested = Path(out_str)
         elif orig_str:
             p = Path(orig_str)
-            suggested = _recipes_dir() / (p.stem + "_recipe.json")
+            suggested = _recipes_dir() / (p.stem + "_recipe.openremap")
         else:
-            suggested = _recipes_dir() / "recipe.json"
+            suggested = _recipes_dir() / "recipe.openremap"
         picked = _pick_save_file(suggested, mode="json", title="Save recipe as…")
         if picked is not None:
             self.post_message(FilePickedForCookOutput(picked))
@@ -1400,9 +1403,11 @@ class CookPanel(Vertical):
 
         orig = Path(orig_str)
         mod = Path(mod_str)
-        # Default output: OpenRemap folder, named <orig_stem>_recipe.json
+        # Default output: OpenRemap folder, named <orig_stem>_recipe.openremap
         out = (
-            Path(out_str) if out_str else _recipes_dir() / (orig.stem + "_recipe.json")
+            Path(out_str)
+            if out_str
+            else _recipes_dir() / (orig.stem + "_recipe.openremap")
         )
 
         for p, label in ((orig, "Original"), (mod, "Modified")):
@@ -1484,9 +1489,9 @@ class TunePanel(Vertical):
                         classes="btn-secondary",
                     )
                 with Vertical(classes="field-col"):
-                    yield Static("Recipe  (.json)", classes="field-label")
+                    yield Static("Recipe  (.openremap)", classes="field-label")
                     yield Input(
-                        placeholder="/path/to/recipe.json", id="tune-recipe-input"
+                        placeholder="/path/to/recipe.openremap", id="tune-recipe-input"
                     )
                     yield Button(
                         "📂  Browse recipe",
@@ -1594,7 +1599,7 @@ class TunePanel(Vertical):
             start_dir: Optional[Path] = p.parent if p.exists() else None
         else:
             start_dir = _recipes_dir()
-        picked = _pick_file(start_dir, mode="json", title="Select recipe JSON")
+        picked = _pick_file(start_dir, mode="json", title="Select recipe")
         if picked is not None:
             self.post_message(FilePickedForTuneRecipe(picked))
         elif not shutil.which("zenity") and not shutil.which("kdialog"):
@@ -1933,8 +1938,10 @@ class ValidatePanel(Vertical):
                     id="btn-browse-validate-bin",
                     classes="btn-secondary",
                 )
-            yield Static("Recipe  (.json)", classes="field-label")
-            yield Input(placeholder="/path/to/recipe.json", id="validate-recipe-input")
+            yield Static("Recipe  (.openremap)", classes="field-label")
+            yield Input(
+                placeholder="/path/to/recipe.openremap", id="validate-recipe-input"
+            )
             with Horizontal(classes="btn-row"):
                 yield Button(
                     "📂  Browse recipe",
@@ -2022,7 +2029,7 @@ class ValidatePanel(Vertical):
             start_dir: Optional[Path] = p.parent if p.exists() else None
         else:
             start_dir = _recipes_dir()
-        picked = _pick_file(start_dir, mode="json", title="Select recipe JSON")
+        picked = _pick_file(start_dir, mode="json", title="Select recipe")
         if picked is not None:
             self.post_message(FilePickedForValidateRecipe(picked))
         elif not shutil.which("zenity") and not shutil.which("kdialog"):

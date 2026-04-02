@@ -8,7 +8,44 @@ all extraction logic to the correct implementation.
 
 import re
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Dict, List, Optional
+
+
+class DetectionStrength(str, Enum):
+    """
+    How confident the extractor's ``can_handle()`` detection is.
+
+    The confidence scorer uses this to award a baseline bonus that reflects
+    the quality of the match *before* any extracted fields are examined.
+
+    Guidelines for choosing a value:
+
+    ``STRONG``
+        4+ detection phases including unique byte signatures, structural
+        checks (header magic, pointer tables, sync markers), and multiple
+        confirmation steps.  False positives are essentially impossible.
+        Examples: EDC17 (5 exclusion guards + signature scan), Multec S
+        (6-phase: size + boot block + HC12 pointer table + exclusion +
+        SW validation + GM PN validation), IAW 1AV (6-phase).
+
+    ``MODERATE``
+        2–3 detection phases with good — but not watertight — signatures.
+        Examples: LH-Jetronic (exclusion + string signatures + anchor),
+        EMS2000 (size + exclusion + header magic), SID803 (size +
+        exclusion + detection signatures).
+
+    ``WEAK``
+        Minimal checks, mostly heuristic.  The detection *works* but
+        relies on a small number of short byte patterns without strong
+        structural confirmation.
+        Examples: M3.x (exclusion + signature scan only, no size gate),
+        ME9 (single anchor string), PPD (exclusion + signature scan).
+    """
+
+    STRONG = "strong"
+    MODERATE = "moderate"
+    WEAK = "weak"
 
 
 class BaseManufacturerExtractor(ABC):
@@ -56,6 +93,12 @@ class BaseManufacturerExtractor(ABC):
     # Class-level opt-in.  None = disabled (default for all existing extractors).
     match_key_fallback_field: Optional[str] = None
 
+    # Detection strength — how rigorous can_handle() is.
+    # Subclasses should set this to STRONG, MODERATE, or WEAK.
+    # The confidence scorer awards a baseline bonus based on this value.
+    # None is accepted for backward compatibility (treated as MODERATE).
+    detection_strength: Optional[DetectionStrength] = None
+
     # -----------------------------------------------------------------------
     # Identity
     # -----------------------------------------------------------------------
@@ -67,6 +110,7 @@ class BaseManufacturerExtractor(ABC):
         Human-readable manufacturer name.
         e.g. "Bosch", "Siemens", "Delphi"
         """
+        ...
 
     @property
     @abstractmethod
@@ -76,6 +120,7 @@ class BaseManufacturerExtractor(ABC):
         e.g. ["EDC17", "MEDC17", "MED17", "EDC16"]
         Used for documentation and family discovery.
         """
+        ...
 
     # -----------------------------------------------------------------------
     # Detection
@@ -319,4 +364,9 @@ class BaseManufacturerExtractor(ABC):
         return results[:max_results]
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} manufacturer={self.name!r} families={self.supported_families}>"
+        strength = self.detection_strength.value if self.detection_strength else "unset"
+        return (
+            f"<{self.__class__.__name__} manufacturer={self.name!r}"
+            f" families={self.supported_families}"
+            f" detection={strength}>"
+        )

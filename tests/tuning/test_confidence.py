@@ -3,18 +3,23 @@ Tests for score_identity() — the ECU binary confidence scorer.
 
 Covers:
   - Unknown binary (no ecu_family) → "Unknown" tier
-  - 1037-SW present → +40, "High" tier with other signals
-  - Non-1037 SW present → +15 only
-  - SW absent + match_key absent → -30, "Suspicious" tier, "IDENT BLOCK MISSING" for 1037-families
-  - SW absent + match_key present → -10 (LH-Jetronic style)
-  - Hardware number present → +25
+  - Canonical SW present → +30 (manufacturer-aware canonical format)
+  - Non-canonical SW present → +15 only
+  - SW absent + match_key absent + expected by family profile → -15
+  - SW absent + match_key present + expected by family profile → -10
+  - SW absent + NOT expected by family profile → 0 (no penalty)
+  - Hardware number present → +20
   - ECU variant present → +10
   - Calibration ID present → +10
+  - OEM part number present → +5
+  - Detection strength bonus → +15/+10/+5 for strong/moderate/weak
   - Tuning keywords in filename → -25, "TUNING KEYWORDS IN FILENAME" warning
   - Generic numbered filename → -15, "GENERIC FILENAME" warning
-  - Score tiers (High/Medium/Low/Suspicious)
+  - Score tiers (High ≥55 / Medium ≥25 / Low ≥0 / Suspicious <0)
+  - Family profiles and _family_expects_field
   - ConfidenceResult helpers (is_suspicious, has_warnings, tier_colour_hint)
   - rationale_summary formatting
+  - Manufacturer-aware scenarios (Bosch, Delphi, Siemens, Magneti Marelli)
   - Determinism
 """
 
@@ -23,9 +28,12 @@ import pytest
 from openremap.tuning.services.confidence import (
     ConfidenceResult,
     ConfidenceSignal,
+    _family_expects_field,
+    _get_family_profile,
     _is_1037_family,
     score_identity,
 )
+from openremap.tuning.manufacturers.base import DetectionStrength
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +49,8 @@ def _identity(
     hardware_number="0261209352",
     calibration_id="1037393302",
     match_key="EDC17C66::1037541778",
+    oem_part_number=None,
+    detection_strength=None,
 ) -> dict:
     """Return a fully-populated EDC17 identity dict (all fields present)."""
     return {
@@ -53,6 +63,8 @@ def _identity(
         "manufacturer": "Bosch",
         "file_size": 2 * 1024 * 1024,
         "sha256": "abc" * 21 + "d",
+        "oem_part_number": oem_part_number,
+        "detection_strength": detection_strength,
     }
 
 
@@ -95,12 +107,12 @@ class TestUnknownBinary:
 
 
 # ---------------------------------------------------------------------------
-# SW version — 1037-prefixed
+# SW version — canonical (manufacturer-aware)
 # ---------------------------------------------------------------------------
 
 
-class TestSW1037:
-    def test_1037_sw_adds_40(self):
+class TestSWCanonical:
+    def test_canonical_sw_adds_30(self):
         result = score_identity(
             _stripped(
                 ecu_variant=None,
@@ -110,8 +122,8 @@ class TestSW1037:
             ),
             filename="ecu.bin",
         )
-        # Only SW signal present: +40
-        assert result.score == 40
+        # Only SW signal present: +30
+        assert result.score == 30
 
     def test_1037_sw_signal_label(self):
         result = score_identity(
@@ -124,7 +136,7 @@ class TestSW1037:
         )
         assert any("canonical" in s.label for s in result.signals)
 
-    def test_1037_sw_signal_delta_is_40(self):
+    def test_canonical_sw_signal_delta_is_30(self):
         result = score_identity(
             _stripped(
                 ecu_variant=None,
@@ -133,7 +145,7 @@ class TestSW1037:
                 match_key="EDC17::1037541778",
             )
         )
-        sw_signal = next(s for s in result.signals if s.delta == 40)
+        sw_signal = next(s for s in result.signals if s.delta == 30)
         assert sw_signal is not None
 
     def test_non_1037_sw_adds_15(self):
@@ -172,16 +184,16 @@ class TestSW1037:
                 match_key="EDC17::2037541778",
             )
         )
-        assert result.score == 15  # non-canonical, +15 not +40
+        assert result.score == 15  # non-canonical, +15 not +30
 
 
 # ---------------------------------------------------------------------------
-# SW absent — two sub-cases
+# SW absent — family-profile-aware sub-cases
 # ---------------------------------------------------------------------------
 
 
 class TestSWAbsent:
-    def test_sw_absent_no_match_key_deducts_30(self):
+    def test_sw_absent_no_match_key_deducts_15(self):
         result = score_identity(
             _stripped(
                 software_version=None,
@@ -192,7 +204,7 @@ class TestSWAbsent:
             ),
             filename="ecu.bin",
         )
-        assert result.score == -30
+        assert result.score == -15
 
     def test_sw_absent_no_match_key_suspicious_tier(self):
         result = score_identity(
@@ -206,7 +218,7 @@ class TestSWAbsent:
         )
         assert result.tier == "Suspicious"
 
-    def test_sw_absent_no_match_key_signal_delta_is_minus30(self):
+    def test_sw_absent_no_match_key_signal_delta_is_minus15(self):
         result = score_identity(
             _stripped(
                 software_version=None,
@@ -216,10 +228,11 @@ class TestSWAbsent:
                 calibration_id=None,
             )
         )
-        assert any(s.delta == -30 for s in result.signals)
+        assert any(s.delta == -15 for s in result.signals)
 
-    def test_sw_absent_with_match_key_deducts_10(self):
-        # match_key present but SW absent (LH-Jetronic style)
+    def test_sw_absent_not_expected_by_profile_no_penalty(self):
+        # LH-Jetronic profile is {"calibration_id"} — SW is NOT expected.
+        # SW absent produces NO penalty (score=0) and no SW signal.
         result = score_identity(
             _stripped(
                 software_version=None,
@@ -231,14 +244,46 @@ class TestSWAbsent:
             ),
             filename="ecu.bin",
         )
-        assert result.score == -10
+        assert result.score == 0
 
-    def test_sw_absent_with_match_key_signal_delta_is_minus10(self):
+    def test_sw_absent_not_expected_by_profile_no_sw_signal(self):
+        # LH-Jetronic: SW not expected → no SW-related signal at all
         result = score_identity(
             _stripped(
                 software_version=None,
                 match_key="LH-JETRONIC::9146179 P01",
                 ecu_family="LH-JETRONIC",
+                ecu_variant=None,
+                hardware_number=None,
+                calibration_id=None,
+            )
+        )
+        assert not any(
+            "SW" in s.label.upper() or "software" in s.label.lower()
+            for s in result.signals
+        )
+
+    def test_sw_absent_with_match_key_expected_deducts_10(self):
+        # EDC17 profile expects SW. SW absent + match_key present → -10
+        result = score_identity(
+            _stripped(
+                software_version=None,
+                match_key="EDC17C66::fallback",
+                ecu_family="EDC17",
+                ecu_variant=None,
+                hardware_number=None,
+                calibration_id=None,
+            ),
+            filename="ecu.bin",
+        )
+        assert result.score == -10
+
+    def test_sw_absent_with_match_key_expected_signal_delta_is_minus10(self):
+        result = score_identity(
+            _stripped(
+                software_version=None,
+                match_key="EDC17C66::fallback",
+                ecu_family="EDC17",
                 ecu_variant=None,
                 hardware_number=None,
                 calibration_id=None,
@@ -318,7 +363,7 @@ class TestSWAbsent:
 
 
 class TestHardwareNumber:
-    def test_hw_present_adds_25(self):
+    def test_hw_present_adds_20(self):
         result = score_identity(
             _stripped(
                 software_version=None,
@@ -329,12 +374,12 @@ class TestHardwareNumber:
             ),
             filename="ecu.bin",
         )
-        # -30 (sw absent, no match_key) + 25 (hw) = -5
-        assert result.score == -5
+        # -15 (sw absent, no match_key, expected) + 20 (hw) = 5
+        assert result.score == 5
 
-    def test_hw_signal_delta_is_25(self):
+    def test_hw_signal_delta_is_20(self):
         result = score_identity(_identity())
-        assert any(s.delta == 25 for s in result.signals)
+        assert any(s.delta == 20 for s in result.signals)
 
     def test_hw_absent_no_hw_signal(self):
         result = score_identity(
@@ -345,11 +390,11 @@ class TestHardwareNumber:
                 match_key="EDC17::1037541778",
             )
         )
-        assert not any(s.delta == 25 for s in result.signals)
+        assert not any(s.delta == 20 for s in result.signals)
 
     def test_hw_label_contains_hw_number(self):
         result = score_identity(_identity())
-        hw_signal = next(s for s in result.signals if s.delta == 25)
+        hw_signal = next(s for s in result.signals if s.delta == 20)
         assert "0261209352" in hw_signal.label
 
 
@@ -544,13 +589,13 @@ class TestGenericFilename:
 
 class TestTiers:
     def test_high_tier_full_identity(self):
-        # +40 (sw) + 25 (hw) + 10 (variant) + 10 (cal_id) = 85
+        # +30 (canonical sw) + 20 (hw) + 10 (variant) + 10 (cal_id) = 70
         result = score_identity(_identity(), filename="ecu.bin")
         assert result.tier == "High"
-        assert result.score == 85
+        assert result.score == 70
 
     def test_medium_tier_sw_only(self):
-        # +40 (sw) only
+        # +30 (canonical sw) only
         result = score_identity(
             _stripped(
                 ecu_variant=None,
@@ -561,10 +606,10 @@ class TestTiers:
             filename="ecu.bin",
         )
         assert result.tier == "Medium"
-        assert result.score == 40
+        assert result.score == 30
 
     def test_medium_tier_sw_and_hw(self):
-        # +40 + 25 = 65 → High
+        # +30 + 20 = 50 → Medium (< 55 threshold)
         result = score_identity(
             _stripped(
                 ecu_variant=None,
@@ -573,11 +618,11 @@ class TestTiers:
             ),
             filename="ecu.bin",
         )
-        assert result.tier == "High"
-        assert result.score == 65
+        assert result.tier == "Medium"
+        assert result.score == 50
 
     def test_low_tier_hw_only(self):
-        # -30 (sw absent, no match_key) + 25 (hw) = -5 → Suspicious
+        # -15 (sw absent, no match_key, expected) + 20 (hw) = 5 → Low
         result = score_identity(
             _stripped(
                 software_version=None,
@@ -587,10 +632,10 @@ class TestTiers:
             ),
             filename="ecu.bin",
         )
-        assert result.tier == "Suspicious"
+        assert result.tier == "Low"
 
     def test_low_tier_non1037_sw_with_tuning_keyword(self):
-        # +15 (non-1037 sw) - 25 (tuning kw) = -10 → Suspicious
+        # +15 (non-canonical sw) - 25 (tuning kw) = -10 → Suspicious
         result = score_identity(
             _stripped(
                 software_version="ABCDE12345",
@@ -605,7 +650,7 @@ class TestTiers:
         assert result.score == -10
 
     def test_suspicious_tier_wiped_ident(self):
-        # sw=None, match_key=None, no hw, no variant, no cal → -30
+        # sw=None, match_key=None, no hw, no variant, no cal → -15
         result = score_identity(
             _stripped(
                 software_version=None,
@@ -618,22 +663,22 @@ class TestTiers:
         assert result.tier == "Suspicious"
 
     def test_high_score_exact_boundary(self):
-        # Exactly 60 → High
-        # +40 (sw) + 25 (hw) = 65 → High
-        # Let's engineer exactly 60: +40 (sw) + 10 (variant) + 10 (cal_id) = 60
+        # Exactly 55 → High
+        # +30 (canonical sw) + 10 (variant) + 10 (cal_id) + 5 (oem_pn) = 55
         result = score_identity(
             _stripped(
                 hardware_number=None,
                 match_key="EDC17C66::1037541778",
+                oem_part_number="12345",
             ),
             filename="ecu.bin",
         )
-        assert result.score == 60
+        assert result.score == 55
         assert result.tier == "High"
 
     def test_medium_score_exact_boundary(self):
         # Exactly 25 → Medium
-        # +15 (non-1037 sw) + 10 (variant) = 25
+        # +15 (non-canonical sw) + 10 (variant) = 25
         result = score_identity(
             _stripped(
                 software_version="ABCDE12345",
@@ -648,13 +693,13 @@ class TestTiers:
 
     def test_low_score_exact_boundary(self):
         # Exactly 0 → Low
-        # -10 (sw absent, match_key present) + 10 (cal_id) = 0
+        # EMS2000 with empty profile — nothing expected, no penalties, no bonuses
         result = score_identity(
             _stripped(
                 software_version=None,
-                ecu_family="LH-JETRONIC",
-                match_key="LH-JETRONIC::9146179 P01",
-                calibration_id="9146179 P01",
+                ecu_family="EMS2000",
+                match_key=None,
+                calibration_id=None,
                 ecu_variant=None,
                 hardware_number=None,
             ),
@@ -757,7 +802,7 @@ class TestRationaleSummary:
 
 
 # ---------------------------------------------------------------------------
-# _is_1037_family helper
+# _is_1037_family helper (now covers all families expecting SW)
 # ---------------------------------------------------------------------------
 
 
@@ -792,6 +837,248 @@ class TestIs1037Family:
     def test_case_insensitive_match(self):
         assert _is_1037_family("edc17") is True
         assert _is_1037_family("Me9") is True
+
+    def test_sid801_is_1037_family(self):
+        assert _is_1037_family("SID801") is True
+
+    def test_multec_is_1037_family(self):
+        assert _is_1037_family("Multec S") is True
+
+    def test_iaw_1av_is_1037_family(self):
+        assert _is_1037_family("IAW 1AV") is True
+
+    def test_ems2000_is_not_1037_family(self):
+        assert _is_1037_family("EMS2000") is False
+
+    def test_iaw_1ap_is_not_1037_family(self):
+        assert _is_1037_family("IAW 1AP") is False
+
+    def test_lh_jetronic_is_not_1037_family_lowercase(self):
+        assert _is_1037_family("LH-Jetronic") is False
+
+
+# ---------------------------------------------------------------------------
+# Detection strength bonus
+# ---------------------------------------------------------------------------
+
+
+class TestDetectionStrength:
+    def test_strong_detection_adds_15(self):
+        result = score_identity(
+            _identity(detection_strength="strong"),
+            filename="ecu.bin",
+        )
+        assert any(
+            s.delta == 15 and "detection" in s.label.lower() for s in result.signals
+        )
+
+    def test_moderate_detection_adds_10(self):
+        result = score_identity(
+            _identity(detection_strength="moderate"),
+            filename="ecu.bin",
+        )
+        assert any(
+            s.delta == 10 and "detection" in s.label.lower() for s in result.signals
+        )
+
+    def test_weak_detection_adds_5(self):
+        result = score_identity(
+            _identity(detection_strength="weak"),
+            filename="ecu.bin",
+        )
+        assert any(
+            s.delta == 5 and "detection" in s.label.lower() for s in result.signals
+        )
+
+    def test_no_detection_strength_no_bonus(self):
+        result = score_identity(
+            _identity(detection_strength=None),
+            filename="ecu.bin",
+        )
+        assert not any("detection" in s.label.lower() for s in result.signals)
+
+    def test_detection_enum_value_accepted(self):
+        result = score_identity(
+            _identity(detection_strength=DetectionStrength.STRONG),
+            filename="ecu.bin",
+        )
+        assert any(
+            s.delta == 15 and "detection" in s.label.lower() for s in result.signals
+        )
+
+
+# ---------------------------------------------------------------------------
+# OEM part number
+# ---------------------------------------------------------------------------
+
+
+class TestOEMPartNumber:
+    def test_oem_pn_present_adds_5(self):
+        result = score_identity(
+            _identity(oem_part_number="036906034BK"),
+            filename="ecu.bin",
+        )
+        oem_signals = [
+            s for s in result.signals if s.delta == 5 and "oem" in s.label.lower()
+        ]
+        assert len(oem_signals) == 1
+
+    def test_oem_pn_absent_no_signal(self):
+        result = score_identity(
+            _identity(oem_part_number=None),
+            filename="ecu.bin",
+        )
+        assert not any("oem" in s.label.lower() for s in result.signals)
+
+
+# ---------------------------------------------------------------------------
+# Family profiles — _family_expects_field / _get_family_profile
+# ---------------------------------------------------------------------------
+
+
+class TestFamilyProfiles:
+    def test_edc17_expects_sw(self):
+        assert _family_expects_field("EDC17", "software_version") is True
+
+    def test_edc17_expects_hw(self):
+        assert _family_expects_field("EDC17", "hardware_number") is True
+
+    def test_lh_jetronic_does_not_expect_sw(self):
+        assert _family_expects_field("LH-Jetronic", "software_version") is False
+
+    def test_lh_jetronic_expects_cal_id(self):
+        assert _family_expects_field("LH-Jetronic", "calibration_id") is True
+
+    def test_ems2000_expects_nothing(self):
+        assert _get_family_profile("EMS2000") == set()
+
+    def test_iaw_1ap_only_expects_cal_id(self):
+        assert _get_family_profile("IAW 1AP") == {"calibration_id"}
+
+    def test_unknown_family_returns_none(self):
+        assert _get_family_profile("UNKNOWN_FAMILY") is None
+
+    def test_prefix_matching(self):
+        # EDC17C66 should match the EDC17 entry
+        profile = _get_family_profile("EDC17C66")
+        assert profile is not None
+        assert "software_version" in profile
+        assert "hardware_number" in profile
+        assert "calibration_id" in profile
+        assert "ecu_variant" in profile
+
+
+# ---------------------------------------------------------------------------
+# Manufacturer-aware end-to-end scenarios
+# ---------------------------------------------------------------------------
+
+
+class TestManufacturerScenarios:
+    def test_delphi_multec_s_high_tier(self):
+        ident = {
+            "ecu_family": "Multec S",
+            "ecu_variant": "XBXB",
+            "software_version": "97231405",
+            "hardware_number": None,
+            "calibration_id": "D00021",
+            "match_key": "Multec S::97231405",
+            "manufacturer": "Delphi",
+            "oem_part_number": "16227049",
+            "detection_strength": "strong",
+            "file_size": 256 * 1024,
+            "sha256": "abc" * 21 + "d",
+        }
+        result = score_identity(ident, filename="ecu.bin")
+        # +15 (strong) + 30 (canonical 8-digit Delphi) + 10 (variant) + 10 (cal) + 5 (oem_pn) = 70
+        assert result.score == 70
+        assert result.tier == "High"
+
+    def test_marelli_mjd6jf_high_tier(self):
+        ident = {
+            "ecu_family": "MJD 6JF",
+            "ecu_variant": "MJD 6JF MUST_C5131",
+            "software_version": "31315X375",
+            "hardware_number": "MAG 01246JO01D",
+            "calibration_id": "MUST_C5131",
+            "match_key": "MJD 6JF::31315X375",
+            "manufacturer": "Magneti Marelli",
+            "oem_part_number": None,
+            "detection_strength": "strong",
+            "file_size": 512 * 1024,
+            "sha256": "abc" * 21 + "d",
+        }
+        result = score_identity(ident, filename="ecu.bin")
+        # +15 (strong) + 30 (canonical Marelli) + 20 (hw) + 10 (variant) + 10 (cal) = 85
+        assert result.score == 85
+        assert result.tier == "High"
+
+    def test_marelli_iaw_1ap_medium_tier(self):
+        ident = {
+            "ecu_family": "IAW 1AP",
+            "ecu_variant": "IAW 1AP",
+            "software_version": None,
+            "hardware_number": None,
+            "calibration_id": "50960654",
+            "match_key": "IAW 1AP::50960654",
+            "manufacturer": "Magneti Marelli",
+            "oem_part_number": None,
+            "detection_strength": "strong",
+            "file_size": 64 * 1024,
+            "sha256": "abc" * 21 + "d",
+        }
+        result = score_identity(ident, filename="ecu.bin")
+        # IAW 1AP profile: {"calibration_id"} → SW not expected → no penalty
+        # +15 (strong) + 10 (cal_id) = 25
+        # variant == family → no variant bonus
+        assert result.score == 25
+        assert result.tier == "Medium"
+
+    def test_siemens_ems2000_low_tier(self):
+        ident = {
+            "ecu_family": "EMS2000",
+            "ecu_variant": None,
+            "software_version": None,
+            "hardware_number": None,
+            "calibration_id": None,
+            "match_key": None,
+            "manufacturer": "Siemens",
+            "oem_part_number": None,
+            "detection_strength": "moderate",
+            "file_size": 128 * 1024,
+            "sha256": "abc" * 21 + "d",
+        }
+        result = score_identity(ident, filename="ecu.bin")
+        # EMS2000 profile: empty set → nothing expected → no penalties
+        # +10 (moderate detection) = 10
+        assert result.score == 10
+        assert result.tier == "Low"
+
+    def test_siemens_ems2000_not_suspicious(self):
+        ident = {
+            "ecu_family": "EMS2000",
+            "ecu_variant": None,
+            "software_version": None,
+            "hardware_number": None,
+            "calibration_id": None,
+            "match_key": None,
+            "manufacturer": "Siemens",
+            "oem_part_number": None,
+            "detection_strength": "moderate",
+            "file_size": 128 * 1024,
+            "sha256": "abc" * 21 + "d",
+        }
+        result = score_identity(ident, filename="ecu.bin")
+        assert result.tier != "Suspicious"
+        assert result.is_suspicious is False
+
+    def test_bosch_edc17_with_detection_strength(self):
+        result = score_identity(
+            _identity(detection_strength="strong"),
+            filename="ecu.bin",
+        )
+        # +15 (strong) + 30 (canonical sw) + 20 (hw) + 10 (variant) + 10 (cal) = 85
+        assert result.score == 85
+        assert result.tier == "High"
 
 
 # ---------------------------------------------------------------------------

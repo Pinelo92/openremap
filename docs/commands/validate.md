@@ -45,7 +45,7 @@ openremap validate before <TARGET> <RECIPE> [OPTIONS]
 | Argument | Required | Description |
 |---|---|---|
 | `TARGET` | Yes | The untuned ECU binary to check (`.bin` or `.ori`). |
-| `RECIPE` | Yes | The recipe `.json` file. |
+| `RECIPE` | Yes | The recipe `.remap` file. |
 
 ### Options
 
@@ -59,10 +59,10 @@ openremap validate before <TARGET> <RECIPE> [OPTIONS]
 
 ```bash
 # Run the check and print the result
-openremap validate before target.bin recipe.json
+openremap validate before target.bin recipe.remap
 
 # Save the full JSON report to a file
-openremap validate before target.bin recipe.json --json --output before_report.json
+openremap validate before target.bin recipe.remap --json --output before_report.json
 ```
 
 ### Example output
@@ -70,7 +70,7 @@ openremap validate before target.bin recipe.json --json --output before_report.j
 **All instructions passed**
 
 ```
-  Validating target.bin against recipe.json …
+  Validating target.bin against recipe.remap …
 
   ✅ Safe to tune
 
@@ -83,7 +83,7 @@ openremap validate before target.bin recipe.json --json --output before_report.j
 **Some instructions failed**
 
 ```
-  Validating target.bin against recipe.json …
+  Validating target.bin against recipe.remap …
 
   ⚠  match_key mismatch
      recipe : EDC17C66::1037541778126241V0
@@ -138,7 +138,7 @@ openremap validate check <TARGET> <RECIPE> [OPTIONS]
 | Argument | Required | Description |
 |---|---|---|
 | `TARGET` | Yes | The ECU binary to search (`.bin` or `.ori`). |
-| `RECIPE` | Yes | The recipe `.json` file. |
+| `RECIPE` | Yes | The recipe `.remap` file. |
 
 ### Options
 
@@ -152,10 +152,10 @@ openremap validate check <TARGET> <RECIPE> [OPTIONS]
 
 ```bash
 # Run the existence check
-openremap validate check target.bin recipe.json
+openremap validate check target.bin recipe.remap
 
 # Save the report for further analysis
-openremap validate check target.bin recipe.json --json --output check_report.json
+openremap validate check target.bin recipe.remap --json --output check_report.json
 ```
 
 ### Verdicts
@@ -211,7 +211,7 @@ openremap validate after <TUNED> <RECIPE> [OPTIONS]
 | Argument | Required | Description |
 |---|---|---|
 | `TUNED` | Yes | The tuned ECU binary to verify (`.bin` or `.ori`). |
-| `RECIPE` | Yes | The recipe `.json` file used when tuning. |
+| `RECIPE` | Yes | The recipe `.remap` file used when tuning. |
 
 ### Options
 
@@ -225,10 +225,10 @@ openremap validate after <TUNED> <RECIPE> [OPTIONS]
 
 ```bash
 # Verify the tuned binary
-openremap validate after target_tuned.bin recipe.json
+openremap validate after target_tuned.bin recipe.remap
 
 # Save the verification report for your records
-openremap validate after target_tuned.bin recipe.json --json --output verify.json
+openremap validate after target_tuned.bin recipe.remap --json --output verify.json
 ```
 
 ### Example output
@@ -236,7 +236,7 @@ openremap validate after target_tuned.bin recipe.json --json --output verify.jso
 **All instructions confirmed**
 
 ```
-  Verifying tuned binary target_tuned.bin against recipe.json …
+  Verifying tuned binary target_tuned.bin against recipe.remap …
 
   ✅ Tune confirmed — all mb bytes verified
 
@@ -249,7 +249,7 @@ openremap validate after target_tuned.bin recipe.json --json --output verify.jso
 **Some instructions failed**
 
 ```
-  Verifying tuned binary target_tuned.bin against recipe.json …
+  Verifying tuned binary target_tuned.bin against recipe.remap …
 
   ❌ Tune NOT confirmed — some instructions failed
 
@@ -276,14 +276,14 @@ openremap validate after target_tuned.bin recipe.json --json --output verify.jso
 
 ```bash
 # Normal workflow — tune does all three phases automatically
-openremap tune target.bin recipe.json
+openremap tune target.bin recipe.remap
 
 # Diagnose a Phase 1 failure reported by tune
-openremap validate check target.bin recipe.json
+openremap validate check target.bin recipe.remap
 
 # Run phases individually with saved reports
-openremap validate before target.bin recipe.json --json --output p1.json
-openremap validate after  target_tuned.bin recipe.json --json --output p3.json
+openremap validate before target.bin recipe.remap --json --output p1.json
+openremap validate after  target_tuned.bin recipe.remap --json --output p3.json
 ```
 
 ---

@@ -15,6 +15,7 @@ from openremap.tuning.manufacturers.bosch.m3x.extractor import BoschM3xExtractor
 from openremap.tuning.manufacturers.bosch.m4x.extractor import BoschM4xExtractor
 from openremap.tuning.manufacturers.bosch.m5x.extractor import BoschM5xExtractor
 from openremap.tuning.manufacturers.bosch.mp9.extractor import BoschMP9Extractor
+from openremap.tuning.manufacturers.bosch.me155.extractor import BoschME155Extractor
 from openremap.tuning.manufacturers.bosch.me7.extractor import BoschME7Extractor
 from openremap.tuning.manufacturers.bosch.me9.extractor import BoschME9Extractor
 from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
@@ -132,6 +133,18 @@ from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
 #                      disjoint from M5x (128/256KB) and ME7 (512KB+).
 #                      Must come after BoschM5xExtractor for clarity.
 #
+# BoschME155Extractor — ME1.5.5 (1999–2005): Opel/Vauxhall petrol ECUs
+#                       (Astra-G Z20LET, Corsa-C Z12XE/Z12XEP).
+#                       C167CR CPU, 512KB flash — same size and ZZ ident
+#                       offset (0x10000) as ME7, but the ZZ descriptor has
+#                       a printable ASCII byte at 0x10002 (0x34 = '4')
+#                       whereas ME7 has non-printable bytes (0xFF/0x00/0x01).
+#                       Family anchor "/ME1.5.5/" in the ident window
+#                       confirms the match.  Must come BEFORE
+#                       BoschME7Extractor — ME7 already rejects these via
+#                       its Phase 3 guard, but placing ME1.5.5 first makes
+#                       detection order explicit and avoids any ambiguity.
+#
 # BoschME7Extractor  — ME7 family: no EDC17/MEDC17 signatures, must be
 #                      confirmed before the broad BoschExtractor runs.
 #
@@ -165,6 +178,7 @@ EXTRACTORS: list[BaseManufacturerExtractor] = [
     BoschLHExtractor(),
     BoschM5xExtractor(),
     BoschMP9Extractor(),
+    BoschME155Extractor(),
     BoschME7Extractor(),
     BoschME9Extractor(),
     BoschEDC16Extractor(),
@@ -189,6 +203,7 @@ __all__ = [
     "BoschM4xExtractor",
     "BoschM5xExtractor",
     "BoschMP9Extractor",
+    "BoschME155Extractor",
     "BoschME7Extractor",
     "BoschME9Extractor",
 ]

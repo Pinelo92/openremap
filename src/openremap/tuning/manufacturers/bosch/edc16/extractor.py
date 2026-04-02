@@ -105,7 +105,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.edc16.patterns import (
     ACTIVE_STARTS_BY_SIZE,
     DETECTION_SIGNATURES,
@@ -115,6 +118,7 @@ from openremap.tuning.manufacturers.bosch.edc16.patterns import (
     PATTERN_REGIONS,
     PATTERNS,
     SEARCH_REGIONS,
+    SIZE_TOLERANCE,
     SUPPORTED_SIZES,
     SW_MIRROR_OFFSET_BY_SIZE,
     SW_OFFSET_BY_SIZE,
@@ -145,6 +149,8 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
     # -----------------------------------------------------------------------
     # Identity
     # -----------------------------------------------------------------------
+
+    detection_strength = DetectionStrength.STRONG
 
     @property
     def name(self) -> str:
@@ -211,18 +217,24 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
             if excl in search_area:
                 return False
 
-        # Phase 2 — reject unknown file sizes, with raw-sector-dump exception.
-        # A raw active-section dump at offset 0 always has DECAFE at 0x3D.
-        # If that fingerprint is present we let Phases 3/4 decide rather than
-        # rejecting here — the size alone is not a reliable discriminator for
-        # extended or concatenated dump files.
+        # Phase 2 — reject unknown file sizes, with two exceptions:
+        #   a) Raw active-section dump at offset 0 (DECAFE at 0x3D).
+        #   b) Trailing-byte tolerance — read tools may append CR+LF, padding,
+        #      or tool-specific checksums at the end of a dump.  If the file
+        #      is at most SIZE_TOLERANCE bytes larger than a known supported
+        #      size, treat it as that size for detection and layout purposes.
         if len(data) not in SUPPORTED_SIZES:
+            snapped = self._snap_size(len(data))
             _raw_sector = len(data) >= 0x40 and data[0x3D:0x40] == EDC16_HEADER_MAGIC
-            if not _raw_sector:
+            if snapped is None and not _raw_sector:
                 return False
 
-        # Phase 3a — accept on \xde\xca\xfe magic at any known offset
-        for offset in MAGIC_OFFSETS_BY_SIZE.get(len(data), []):
+        # Phase 3a — accept on \xde\xca\xfe magic at any known offset.
+        # Use the snapped size for the lookup so that files with trailing
+        # bytes (e.g. 2MB + 2 CR/LF bytes) still resolve to the correct
+        # set of magic offsets.
+        lookup_size = self._snap_size(len(data)) or len(data)
+        for offset in MAGIC_OFFSETS_BY_SIZE.get(lookup_size, []):
             end = offset + len(EDC16_HEADER_MAGIC)
             if len(data) >= end and data[offset:end] == EDC16_HEADER_MAGIC:
                 return True
@@ -333,6 +345,30 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         return result
 
     # -----------------------------------------------------------------------
+    # Internal — size snapping
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _snap_size(raw_size: int) -> Optional[int]:
+        """
+        Map a raw file size to the nearest supported EDC16 size.
+
+        Returns the matching entry from SUPPORTED_SIZES if ``raw_size``
+        is at most SIZE_TOLERANCE bytes larger than a known size.  Only
+        positive excess is accepted (the binary may have trailing padding
+        or CR+LF but never fewer bytes than expected).
+
+        Returns None if no supported size is within tolerance.
+        """
+        if raw_size in SUPPORTED_SIZES:
+            return raw_size
+        for supported in sorted(SUPPORTED_SIZES):
+            excess = raw_size - supported
+            if 0 < excess <= SIZE_TOLERANCE:
+                return supported
+        return None
+
+    # -----------------------------------------------------------------------
     # Internal — active section detector
     # -----------------------------------------------------------------------
 
@@ -359,9 +395,11 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         resolver receives a confirmed offset rather than guessing.
         """
         size = len(data)
-        # For non-standard sizes fall back to trying active_start = 0x0
-        # (raw sector dump where the file begins directly with the active section).
-        candidates = ACTIVE_STARTS_BY_SIZE.get(size, [0x0])
+        snapped = self._snap_size(size)
+        # Use snapped size for dict lookup — trailing bytes do not affect
+        # the internal flash layout.  For genuinely non-standard sizes
+        # fall back to active_start = 0x0 (raw sector dump).
+        candidates = ACTIVE_STARTS_BY_SIZE.get(snapped or size, [0x0])
 
         for active_start in candidates:
             # Condition 1: magic present at active_start + 0x3d
@@ -472,6 +510,8 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         VAG PD bin headers (e.g. "1037370634379U85" → we return "1037370634").
         """
         size = len(data)
+        snapped = self._snap_size(size)
+        lookup_size = snapped or size
 
         # Priority 1 — active_start + 0x10
         if active_start is not None:
@@ -481,8 +521,8 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
                 return hit
 
         # Priority 2 — legacy fixed offsets (primary + mirror)
-        primary_offset = SW_OFFSET_BY_SIZE.get(size)
-        mirror_offset = SW_MIRROR_OFFSET_BY_SIZE.get(size)
+        primary_offset = SW_OFFSET_BY_SIZE.get(lookup_size)
+        mirror_offset = SW_MIRROR_OFFSET_BY_SIZE.get(lookup_size)
 
         if primary_offset is not None:
             hit = self._read_sw_at(data, primary_offset)

@@ -72,7 +72,7 @@ _COMMANDS: list[tuple[str, str]] = [
         "Same as above but output raw JSON — useful for scripting.",
     ),
     (
-        "openremap cook <STOCK> <TUNED> --output recipe.json",
+        "openremap cook <STOCK> <TUNED> --output recipe.openremap",
         "Diff two binaries and save every changed byte block as a recipe.",
     ),
     (

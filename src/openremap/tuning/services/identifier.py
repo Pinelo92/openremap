@@ -9,7 +9,8 @@ matches.
 
 Returns the lean identity fields:
     manufacturer, match_key, ecu_family, ecu_variant,
-    software_version, hardware_number, calibration_id, file_size, sha256 (full file).
+    software_version, hardware_number, calibration_id,
+    oem_part_number, detection_strength, file_size, sha256 (full file).
 
 Full rich-extraction logic is preserved cold in the legacy/ reference folder.
 """
@@ -41,7 +42,8 @@ def identify_ecu(data: bytes, filename: str = "unknown.bin") -> Dict:
     for extractor in EXTRACTORS:
         if extractor.can_handle(data):
             rich = extractor.extract(data, filename)
-            return _to_identity(rich, file_size, sha256)
+            detection_strength = getattr(extractor, "detection_strength", None)
+            return _to_identity(rich, file_size, sha256, detection_strength)
 
     return _unknown_identity(file_size, sha256)
 
@@ -51,13 +53,26 @@ def identify_ecu(data: bytes, filename: str = "unknown.bin") -> Dict:
 # ---------------------------------------------------------------------------
 
 
-def _to_identity(rich: Dict, file_size: int, sha256: str) -> Dict:
+def _to_identity(
+    rich: Dict,
+    file_size: int,
+    sha256: str,
+    detection_strength: Optional[str] = None,
+) -> Dict:
     """
     Map the rich extractor output down to the lean identity fields.
 
     All other fields (md5, sha256_first_64kb, calibration_version,
-    sw_base_version, serial_number, dataset_number, oem_part_number,
-    raw_strings) are intentionally dropped.
+    sw_base_version, serial_number, dataset_number, raw_strings)
+    are intentionally dropped.
+
+    ``oem_part_number`` is now included — Marelli and Delphi families
+    use it as a primary identifier and the confidence scorer awards
+    points for its presence.
+
+    ``detection_strength`` is injected from the extractor class attribute
+    rather than from the rich dict (it is a property of the extractor,
+    not of a particular extraction result).
     """
     return {
         "manufacturer": rich.get("manufacturer"),
@@ -67,6 +82,8 @@ def _to_identity(rich: Dict, file_size: int, sha256: str) -> Dict:
         "software_version": rich.get("software_version"),
         "hardware_number": rich.get("hardware_number"),
         "calibration_id": rich.get("calibration_id"),
+        "oem_part_number": rich.get("oem_part_number"),
+        "detection_strength": detection_strength,
         "file_size": file_size,
         "sha256": sha256,
     }
@@ -85,6 +102,8 @@ def _unknown_identity(file_size: int, sha256: str) -> Dict:
         "software_version": None,
         "hardware_number": None,
         "calibration_id": None,
+        "oem_part_number": None,
+        "detection_strength": None,
         "file_size": file_size,
         "sha256": sha256,
     }

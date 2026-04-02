@@ -80,7 +80,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional, Tuple
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Detection signatures
@@ -145,6 +148,7 @@ class BoschLHExtractor(BaseManufacturerExtractor):
     # Opt in: when software_version is absent (Format A only), use calibration_id
     # as the version component of the match key.
     match_key_fallback_field = "calibration_id"
+    detection_strength = DetectionStrength.MODERATE
 
     # -----------------------------------------------------------------------
     # Identity

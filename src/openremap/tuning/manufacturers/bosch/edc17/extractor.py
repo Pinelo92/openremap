@@ -11,7 +11,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.edc17.patterns import (
     DETECTION_SIGNATURES,
     FAMILY_BASE_NAMES,
@@ -34,6 +37,7 @@ class BoschExtractor(BaseManufacturerExtractor):
     # flash dumps where the MCU constant 1037555072 is rejected and the PSA
     # calibration_id is the sole unique identifier).
     match_key_fallback_field = "calibration_id"
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

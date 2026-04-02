@@ -35,7 +35,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.mp9.patterns import (
     EXCLUSION_SIGNATURES,
     FAMILY_NORMALISATION,
@@ -63,6 +66,8 @@ class BoschMP9Extractor(BaseManufacturerExtractor):
 
     The match_key is built as ``MP9::<software_version>``.
     """
+
+    detection_strength = DetectionStrength.STRONG
 
     # ------------------------------------------------------------------
     # Identity

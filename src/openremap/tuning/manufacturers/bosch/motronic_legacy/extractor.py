@@ -119,7 +119,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Exclusion signatures
@@ -184,6 +187,8 @@ class BoschMotronicLegacyExtractor(BaseManufacturerExtractor):
     None of these families contain ASCII version ident blocks (except
     KE-Jetronic), so match_key is None for all except KE-Jetronic.
     """
+
+    detection_strength = DetectionStrength.MODERATE
 
     # -----------------------------------------------------------------------
     # Identity

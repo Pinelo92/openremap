@@ -1,8 +1,8 @@
 """
-ECU Recipe Builder
+ECU Recipe Builder — .openremap format
 
 Accepts two ECU binary files as raw bytes (in-memory), compares them and
-produces a format-4.0 recipe consumed by the patcher pipeline.
+produces a .openremap recipe consumed by the patcher pipeline.
 
 Instruction fields emitted:
     offset          — absolute byte offset in the original file (int)
@@ -14,7 +14,7 @@ Instruction fields emitted:
     description     — human-readable summary
 
 ECU identification is fully delegated to identifier.py — this file
-contains only the diff engine and recipe assembly.
+contains only the diff engine and .openremap recipe assembly.
 
 The ecu block embedded in the recipe contains only the lean identity fields:
     manufacturer, match_key, ecu_family, ecu_variant,
@@ -75,7 +75,7 @@ class Change:
 class ECUDiffAnalyzer:
     """
     Analyzes differences between two ECU binary files and produces a
-    format-4.0 recipe — the same format consumed by the patcher pipeline.
+    .openremap recipe — the same format consumed by the patcher pipeline.
 
     Operates entirely on in-memory bytes — no file I/O.
     Manufacturer identification is delegated to the registry.
@@ -204,7 +204,7 @@ class ECUDiffAnalyzer:
 
     def build_recipe(self) -> Dict:
         """
-        Build the full format-4.0 recipe dict.
+        Build the full .openremap recipe dict.
 
         Ready to be serialised, stored, or passed directly to the patcher pipeline.
         Consumed directly by: ecu_validate_strict, ecu_validate_exists,
@@ -213,6 +213,7 @@ class ECUDiffAnalyzer:
         Recipe shape
         ------------
         {
+            "openremap": { "type": "recipe", "schema_version": "4.0" },
             "metadata": { ... },
             "ecu": {
                 "file_size": int,
@@ -257,14 +258,18 @@ class ECUDiffAnalyzer:
         }
 
         return {
+            "openremap": {
+                "type": "recipe",
+                "schema_version": "4.0",
+            },
             "metadata": {
                 "original_file": self.original_filename,
                 "modified_file": self.modified_filename,
                 "original_size": len(self.original_data),
                 "modified_size": len(self.modified_data),
                 "context_size": self.context_size,
-                "format_version": "4.0",
-                "description": "ECU patch recipe with exact-offset and context-anchor instructions",
+                "format_version": "4.1",
+                "description": "OpenRemap ECU patch recipe with exact-offset and context-anchor instructions",
             },
             "ecu": ecu_block,
             "statistics": self.compute_stats(),

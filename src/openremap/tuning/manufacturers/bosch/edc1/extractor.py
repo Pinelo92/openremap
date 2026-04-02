@@ -73,7 +73,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Supported file sizes
@@ -174,6 +177,8 @@ class BoschEDC1Extractor(BaseManufacturerExtractor):
       1037 — standard Bosch prefix, used by A6 AAT/AEL bins that share the
               identical binary structure but carry a later-generation prefix.
     """
+
+    detection_strength = DetectionStrength.MODERATE
 
     # -----------------------------------------------------------------------
     # Identity

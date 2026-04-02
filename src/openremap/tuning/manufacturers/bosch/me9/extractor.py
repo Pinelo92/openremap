@@ -57,7 +57,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Detection constants
@@ -142,6 +145,8 @@ class BoschME9Extractor(BaseManufacturerExtractor):
     in no other Bosch ECU family (with the exception of MED9 derivatives,
     which are explicitly excluded by checking for the b"MED9" marker).
     """
+
+    detection_strength = DetectionStrength.WEAK
 
     # -----------------------------------------------------------------------
     # Identity

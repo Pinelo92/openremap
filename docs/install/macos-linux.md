@@ -4,7 +4,7 @@
 
 ## What you are installing
 
-**OpenRemap** is a command-line tool — you run it by typing short commands in a terminal.
+**OpenRemap** is a terminal application with a full interactive interface (TUI). Just type `openremap` and everything is at your fingertips — no commands to memorise. A full CLI is also available for scripting and automation.
 
 One piece of software is needed first:
 
@@ -102,10 +102,12 @@ Both commands should work from any directory. If `openremap` is not found, see [
 ## Your first command
 
 ```bash
-openremap workflow
+openremap
 ```
 
-This prints a complete plain-English walkthrough — what each step does, the exact commands to type, and what to look for at each stage. Start here.
+This launches the full interactive interface — identify files, scan folders, cook recipes, and apply tunes, all from one screen. No commands to memorise.
+
+Prefer the command line? Run `openremap workflow` for a plain-English walkthrough of all available CLI commands.
 
 ---
 

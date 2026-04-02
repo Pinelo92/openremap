@@ -13,11 +13,11 @@ three phases pass. Exit code 0 = success, 1 = any phase failed.
 Use --skip-validation to bypass Phases 1 and 3 (escape hatch for scripted pipelines).
 
 Examples:
-    openremap tune target.bin recipe.json
-    openremap tune target.bin recipe.json --output my_tuned.bin
-    openremap tune target.bin recipe.json --report tune_report.json
-    openremap tune target.bin recipe.json --skip-validation
-    openremap tune target.bin recipe.json --json
+    openremap tune target.bin recipe.openremap
+    openremap tune target.bin recipe.openremap --output my_tuned.bin
+    openremap tune target.bin recipe.openremap --report tune_report.json
+    openremap tune target.bin recipe.openremap --skip-validation
+    openremap tune target.bin recipe.openremap --json
 """
 
 from __future__ import annotations
@@ -78,11 +78,11 @@ def _read_bin(path: Path, label: str) -> bytes:
 
 
 def _read_recipe(path: Path) -> dict:
-    """Read and parse a recipe JSON file, exiting with a clear message on error."""
-    if path.suffix.lower() != ".json":
+    """Read and parse a recipe .openremap (or .json) file, exiting with a clear message on error."""
+    if path.suffix.lower() not in (".openremap", ".json"):
         typer.echo(
             typer.style(
-                f"Error: Recipe file '{path.name}' must be a .json file.",
+                f"Error: Recipe file '{path.name}' must be a .openremap or .json file.",
                 fg=typer.colors.RED,
                 bold=True,
             ),
@@ -514,7 +514,7 @@ def tune(
     recipe: Annotated[
         Path,
         typer.Argument(
-            help="The recipe .json file to apply.",
+            help="The recipe file (.openremap) to apply.",
             exists=True,
             file_okay=True,
             dir_okay=False,

@@ -441,6 +441,20 @@ def scan(
             ),
         ),
     ] = False,
+    recursive: Annotated[
+        bool,
+        typer.Option(
+            "--recursive",
+            "-R",
+            help=(
+                "Recurse into sub-directories when collecting candidate files. "
+                "Without this flag only direct children of the scan directory "
+                "are considered (the default). File paths in the output will "
+                "show their relative path from the scan root so you can see "
+                "which sub-folder each file came from."
+            ),
+        ),
+    ] = False,
     report: Annotated[
         Optional[Path],
         typer.Option(
@@ -533,11 +547,22 @@ def scan(
             )
             raise typer.Exit(code=1)
 
-    # --- Collect candidate files — direct children only, skip sub-folders ---
+    # --- Collect candidate files ---
     dest_names = set(ALL_DEST)
-    candidates: list[Path] = sorted(
-        f for f in directory.iterdir() if f.is_file() and f.name not in dest_names
-    )
+    if recursive:
+        candidates: list[Path] = sorted(
+            f
+            for f in directory.rglob("*")
+            if f.is_file()
+            and f.name not in dest_names
+            # Skip files inside the flat destination folders themselves so
+            # re-running a scan after --move doesn't re-process them.
+            and not any(f == dest[d] or dest[d] in f.parents for d in ALL_DEST)
+        )
+    else:
+        candidates: list[Path] = sorted(
+            f for f in directory.iterdir() if f.is_file() and f.name not in dest_names
+        )
 
     if not candidates:
         typer.echo(
@@ -587,6 +612,11 @@ def scan(
         label_idx = typer.style(f"[{idx:>{idx_width}}/{total}]", dim=True)
         ext = filepath.suffix.lower()
 
+        # Display name: relative path when recursive, bare name otherwise.
+        display_name = (
+            str(filepath.relative_to(directory)) if recursive else filepath.name
+        )
+
         # --- Wrong extension → trash ---
         if ext not in VALID_EXTENSIONS:
             actual_dest = dest[DEST_TRASH]
@@ -594,7 +624,7 @@ def scan(
                 safe_move(filepath, actual_dest)
             counts[DEST_TRASH] += 1
             tag = typer.style("  TRASH      ", fg=typer.colors.RED)
-            typer.echo(f"{label_idx}{tag}{filepath.name}")
+            typer.echo(f"{label_idx}{tag}{display_name}")
             if report is not None:
                 report_rows.append(
                     _build_report_row(
@@ -627,7 +657,7 @@ def scan(
                 safe_move(filepath, actual_dest)
             counts[DEST_TRASH] += 1
             tag = typer.style("  TRASH      ", fg=typer.colors.RED)
-            typer.echo(f"{label_idx}{tag}{filepath.name}  (empty file)")
+            typer.echo(f"{label_idx}{tag}{display_name}  (empty file)")
             if report is not None:
                 report_rows.append(
                     _build_report_row(
@@ -676,7 +706,7 @@ def scan(
         tag = typer.style(label, fg=colour)
         timing = typer.style(f"  {elapsed_ms:6.1f} ms", dim=True)
 
-        typer.echo(f"{label_idx}{tag}{filepath.name}{timing}")
+        typer.echo(f"{label_idx}{tag}{display_name}{timing}")
 
         # --- Build detail line ---
         detail = result.detail

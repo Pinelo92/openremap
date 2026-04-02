@@ -195,7 +195,7 @@ def workflow() -> None:
         "       replay it on any matching ECU.",
     )
     _blank()
-    _cmd("openremap cook stock.bin stage1.bin --output recipe.json")
+    _cmd("openremap cook stock.bin stage1.bin --output recipe.openremap")
     _what_to_look_for()
     _ok('"Recipe built successfully" with an instruction count greater than 0.')
     _ok("The ECU block shows the correct Manufacturer · Family and Match Key.")
@@ -221,9 +221,9 @@ def workflow() -> None:
     )
     _blank()
     _cmd(
-        "openremap tune target.bin recipe.json",
-        "openremap tune target.bin recipe.json --output my_tuned.bin",
-        "openremap tune target.bin recipe.json --report tune_report.json",
+        "openremap tune target.bin recipe.openremap",
+        "openremap tune target.bin recipe.openremap --output my_tuned.bin",
+        "openremap tune target.bin recipe.openremap --report tune_report.json",
     )
     _what_to_look_for()
     _ok('"Tune complete" with all three phases green — file is ready for checksum.')
@@ -231,7 +231,7 @@ def workflow() -> None:
     _note("Verify the shifted instructions carefully before flashing.")
     _fail("Phase 1 fails — target does not match the recipe.")
     _note("Run the command below to diagnose why:")
-    _note("  openremap validate check target.bin recipe.json")
+    _note("  openremap validate check target.bin recipe.openremap")
     _note("")
     _note("  EXACT    → bytes at exact offsets (unusual — re-check the file).")
     _note("  SHIFTED  → bytes at a different offset (different SW revision).")
@@ -240,7 +240,7 @@ def workflow() -> None:
     _fail('"match_key mismatch" warning — the target is a different SW version.')
     _note("Run  openremap validate check  and review the verdict before continuing.")
     _fail("Phase 2 or Phase 3 fails — do not flash the output binary.")
-    _note("Run  openremap validate check target.bin recipe.json  to diagnose.")
+    _note("Run  openremap validate check target.bin recipe.openremap  to diagnose.")
 
     # ── STEP 4 — Validate individually (advanced / when tune fails) ───────────
     _step("4", "Validate individually  (advanced — only when Step 3 fails)")
@@ -258,10 +258,10 @@ def workflow() -> None:
     )
     _blank()
     _cmd(
-        "openremap validate before target.bin recipe.json",
-        "openremap validate check  target.bin recipe.json",
-        "openremap validate after  target_tuned.bin recipe.json",
-        "openremap validate after  target_tuned.bin recipe.json --json --output verify.json",
+        "openremap validate before target.bin recipe.openremap",
+        "openremap validate check  target.bin recipe.openremap",
+        "openremap validate after  target_tuned.bin recipe.openremap",
+        "openremap validate after  target_tuned.bin recipe.openremap --json --output verify.json",
     )
     _what_to_look_for()
     _ok('"Safe to tune" from validate before — Phase 1 would pass inside tune.')

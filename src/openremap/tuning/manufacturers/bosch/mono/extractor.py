@@ -53,7 +53,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 from openremap.tuning.manufacturers.bosch.mono.patterns import (
     DEFAULT_FAMILY,
     EXCLUSION_SIGNATURES,
@@ -85,6 +88,7 @@ class BoschMonoExtractor(BaseManufacturerExtractor):
     # Use oem_part_number as the fallback field for match_key when
     # software_version is absent (which it always is for Mono-Motronic).
     match_key_fallback_field = "oem_part_number"
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

@@ -61,7 +61,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Detection
@@ -147,6 +150,8 @@ class BoschM1x55Extractor(BaseManufacturerExtractor):
     Extractor for Bosch Motronic M1.55 ECU binaries.
     Handles Alfa Romeo 128KB petrol ECU bins from the mid-1990s to early 2000s.
     """
+
+    detection_strength = DetectionStrength.MODERATE
 
     # -----------------------------------------------------------------------
     # Identity

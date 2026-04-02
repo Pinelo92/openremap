@@ -57,7 +57,7 @@ The match key is the fingerprint. Everything downstream uses it to confirm you a
 This is where the diff happens.
 
 ```bash
-openremap cook stock.bin stage1.bin --output recipe.json
+openremap cook stock.bin stage1.bin --output recipe.remap
 ```
 
 OpenRemap compares the two files byte by byte, groups consecutive changed bytes into blocks, and for each block records:
@@ -78,15 +78,15 @@ A recipe for a real-world stage 1 tune typically contains a few dozen to a few h
 Before writing a single byte to the target, you validate.
 
 ```bash
-openremap validate strict target.bin recipe.json
+openremap validate before target.bin recipe.remap
 ```
 
-Strict validation reads the exact offset of every instruction in the recipe and checks that the original bytes (`ob`) are still there. If every instruction matches, the binary is clean and safe to patch. If anything fails, it will not proceed.
+Pre-flight validation reads the exact offset of every instruction in the recipe and checks that the original bytes (`ob`) are still there. If every instruction matches, the binary is clean and safe to patch. If anything fails, it will not proceed.
 
-There is a second validator for when strict validation fails:
+There is a second validator for when pre-flight validation fails:
 
 ```bash
-openremap validate exists target.bin recipe.json
+openremap validate check target.bin recipe.remap
 ```
 
 This scans the entire binary for each instruction's original bytes, regardless of offset, and tells you:
@@ -95,14 +95,14 @@ This scans the entire binary for each instruction's original bytes, regardless o
 - **SHIFTED** — found, but at a different offset (the map moved between SW versions)
 - **MISSING** — not found anywhere (wrong ECU, wrong calibration, already modified)
 
-The exists validator answers the question: *is this the right ECU, or just the wrong revision?*
+The check validator answers the question: *is this the right ECU, or just the wrong revision?*
 
 ---
 
 ### 4. Tune
 
 ```bash
-openremap tune target.bin recipe.json --output target_tuned.bin
+openremap tune target.bin recipe.remap --output target_tuned.bin
 ```
 
 The tuner runs strict pre-flight validation internally before touching anything. If that passes, it applies every instruction using a **context + original bytes anchor search**: instead of blindly writing to the recorded offset, it searches within a ±2 KB window for the exact pattern of `ctx + ob`. This makes the tuner tolerant of minor software revision shifts — maps that moved slightly between calibrations are found and tuned correctly.
@@ -114,10 +114,10 @@ The tuner works on an in-memory copy of the binary. The original file is never m
 ### 5. Verify (after tuning)
 
 ```bash
-openremap validate tuned target_tuned.bin recipe.json
+openremap validate after target_tuned.bin recipe.remap
 ```
 
-The post-tune validator is the mirror image of strict validation: it checks that the modified bytes (`mb`) are now present at every recorded offset. This confirms the tune was written correctly, not just that it was attempted.
+The post-tune validator is the mirror image of pre-flight validation: it checks that the modified bytes (`mb`) are now present at every recorded offset. This confirms the tune was written correctly, not just that it was attempted.
 
 > 🔴 **After tuning, two things are mandatory before this binary goes anywhere near a vehicle.**
 >
@@ -177,7 +177,7 @@ You are iterating on a calibration — adjusting, reflashing, data-logging, adju
 
 ### You are porting a tune across ECUs of the same family but different software revisions
 
-You have a recipe built from software version A and a target ECU running software version B — the same family, a minor revision difference. Run `openremap validate exists` first. If it comes back with SHIFTED results rather than MISSING, the patcher's anchor search may recover the correct offsets automatically. If it comes back with MISSING instructions, the maps moved too far or the calibration is too different — stop there.
+You have a recipe built from software version A and a target ECU running software version B — the same family, a minor revision difference. Run `openremap validate check` first. If it comes back with SHIFTED results rather than MISSING, the patcher's anchor search may recover the correct offsets automatically. If it comes back with MISSING instructions, the maps moved too far or the calibration is too different — stop there.
 
 ### You want to batch-identify a library of ECU binaries
 
@@ -207,7 +207,7 @@ EDC17C66::1037541778126241V0
 
 The reason this matters: two ECUs from the same car model, even the same year, can have different software versions. The maps are at different offsets. The calibration values are different. A recipe built from version A applied to version B can write bytes to the wrong location entirely.
 
-A match key mismatch is not a hard block — you can override it — but it is a serious warning. Unless you have confirmed through `validate exists` that the instructions land correctly on the target, a mismatch means stop.
+A match key mismatch is not a hard block — you can override it — but it is a serious warning. Unless you have confirmed through `validate check` that the instructions land correctly on the target, a mismatch means stop.
 
 For ECU families where no software version is readable from the binary, the match key falls back to another extracted field (calibration ID, hardware number). The patcher still works, but the identity guarantee is weaker.
 
@@ -224,8 +224,8 @@ No. Both commands are completely read-only. `identify` reads the binary and prin
 **Can I break an ECU just by using OpenRemap?**
 Not by identifying or cooking. Patching produces a modified binary, but that binary only matters when you flash it. OpenRemap does not flash anything — it hands you a file. What happens next is your responsibility and your flash tool's job.
 
-**My strict validation failed. What do I do?**
-Run `openremap validate exists` on the same target and recipe. Read the output. If all instructions come back EXACT or SHIFTED, the binary is the right ECU but possibly a different software revision — the patcher may still work. If any instructions come back MISSING, the binary is the wrong ECU or has already been modified at those locations. Do not proceed.
+**My pre-flight validation failed. What do I do?**
+Run `openremap validate check` on the same target and recipe. Read the output. If all instructions come back EXACT or SHIFTED, the binary is the right ECU but possibly a different software revision — the patcher may still work. If any instructions come back MISSING, the binary is the wrong ECU or has already been modified at those locations. Do not proceed.
 
 **Can I use this on encrypted or scrambled ECU binaries?**
 No. OpenRemap works on plaintext binaries where the calibration data is readable. Some ECU variants store the calibration in an encrypted or scrambled region — the extractors will either fail to identify them or return incomplete results. A scrambled EDC16C8, for example, will be identified correctly (the boot sector is not scrambled) but the software version will come back as `null`.

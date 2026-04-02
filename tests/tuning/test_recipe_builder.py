@@ -439,10 +439,17 @@ class TestBuildRecipe:
         assert "statistics" in recipe
         assert "instructions" in recipe
 
-    def test_format_version_is_4_0(self):
+    def test_format_version_is_4_1(self):
         a = make_analyzer(make_bin(256), make_bin(256))
         recipe = a.build_recipe()
-        assert recipe["metadata"]["format_version"] == "4.0"
+        assert recipe["metadata"]["format_version"] == "4.1"
+
+    def test_openremap_envelope_present(self):
+        a = make_analyzer(make_bin(256), make_bin(256))
+        recipe = a.build_recipe()
+        assert "openremap" in recipe
+        assert recipe["openremap"]["type"] == "recipe"
+        assert recipe["openremap"]["schema_version"] == "4.0"
 
     def test_original_and_modified_filenames_in_metadata(self):
         orig = make_bin(256)

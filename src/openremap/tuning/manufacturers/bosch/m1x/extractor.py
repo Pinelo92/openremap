@@ -143,7 +143,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Detection signatures
@@ -289,6 +292,8 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
         hw = ident_clean[0:10][::-1]   ->  '0261xxxxxx'
         sw = ident_clean[10:20][::-1]  ->  '1267xxxxxx'
     """
+
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

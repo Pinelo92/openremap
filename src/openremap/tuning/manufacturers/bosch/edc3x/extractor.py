@@ -182,7 +182,10 @@ import hashlib
 import re
 from typing import Dict, List, Optional, Tuple
 
-from openremap.tuning.manufacturers.base import BaseManufacturerExtractor
+from openremap.tuning.manufacturers.base import (
+    BaseManufacturerExtractor,
+    DetectionStrength,
+)
 
 # ---------------------------------------------------------------------------
 # Supported file sizes
@@ -447,6 +450,8 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
 
     Detection uses up to five phases (see module docstring for full detail).
     """
+
+    detection_strength = DetectionStrength.STRONG
 
     # -----------------------------------------------------------------------
     # Identity

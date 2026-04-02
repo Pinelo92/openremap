@@ -16,12 +16,12 @@ Usage:
     openremap families
     openremap families --family EDC16
     openremap identify ecu.bin
-    openremap cook stock.bin stage1.bin --output recipe.json
-    openremap tune target.bin recipe.json
-    openremap tune target.bin recipe.json --output target_tuned.bin
-    openremap validate before target.bin recipe.json
-    openremap validate check  target.bin recipe.json
-    openremap validate after  target_tuned.bin recipe.json
+    openremap cook stock.bin stage1.bin --output recipe.openremap
+    openremap tune target.bin recipe.openremap
+    openremap tune target.bin recipe.openremap --output target_tuned.bin
+    openremap validate before target.bin recipe.openremap
+    openremap validate check  target.bin recipe.openremap
+    openremap validate after  target_tuned.bin recipe.openremap
     openremap scan ./my_bins/
     openremap scan ./my_bins/ --move --organize
 """
