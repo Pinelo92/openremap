@@ -22,6 +22,9 @@ import hashlib
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    HEADER_MATCH,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -88,9 +91,13 @@ class SiemensEMS2000Extractor(BaseManufacturerExtractor):
         This is deliberately very conservative.  We would rather miss an
         EMS2000 bin than falsely claim a non-EMS2000 bin.
         """
+        evidence: list[str] = []
+
         # --- Phase 1: Size gate ---
         if len(data) != EMS2000_FILE_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # --- Phase 2: Exclusion signatures ---
         # Search the full binary for any signature that belongs to another
@@ -98,13 +105,18 @@ class SiemensEMS2000Extractor(BaseManufacturerExtractor):
         # this binary is definitively not EMS2000.
         for sig in EXCLUSION_SIGNATURES:
             if sig in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # --- Phase 3: Header magic ---
         if data[:4] == EMS2000_HEADER:
+            evidence.append(HEADER_MATCH)
+            self._set_evidence(evidence)
             return True
 
         # No positive identification possible — reject.
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

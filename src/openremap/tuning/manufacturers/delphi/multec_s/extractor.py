@@ -30,6 +30,11 @@ import hashlib
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    BOOT_BLOCK,
+    EXCLUSION_CLEAR,
+    IDENT_BLOCK,
+    POINTER_TABLE,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -119,39 +124,55 @@ class DelphiMultecSExtractor(BaseManufacturerExtractor):
 
         All six phases must pass for the binary to be claimed.
         """
+        evidence: list[str] = []
+
         # --- Phase 1: Size gate ---
         if len(data) != MULTEC_S_FILE_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # --- Phase 2: Boot block — erased flash (all 0xFF) ---
         if data[:BOOT_BLOCK_CHECK_LENGTH] != BOOT_BLOCK_FILL:
+            self._set_evidence()
             return False
+        evidence.append(BOOT_BLOCK)
 
         # --- Phase 3: HC12 pointer table signature at 0x2000 ---
         sig_start = HC12_POINTER_OFFSET
         sig_end = sig_start + len(HC12_POINTER_SIGNATURE)
         if data[sig_start:sig_end] != HC12_POINTER_SIGNATURE:
+            self._set_evidence()
             return False
+        evidence.append(POINTER_TABLE)
 
         # --- Phase 4: Exclusion signatures ---
         for sig in EXCLUSION_SIGNATURES:
             if sig in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # --- Phase 5: Ident block — SW number + broadcast code ---
         # 8 ASCII digits at 0x3009–0x3010
         if not all(0x30 <= b <= 0x39 for b in data[SW_CHECK_START:SW_CHECK_END]):
+            self._set_evidence()
             return False
         # 2 uppercase ASCII letters at 0x3011–0x3012
         if not all(
             0x41 <= b <= 0x5A for b in data[BROADCAST_CHECK_START:BROADCAST_CHECK_END]
         ):
+            self._set_evidence()
             return False
+        evidence.append(IDENT_BLOCK)
 
         # --- Phase 6: GM part number — 8 ASCII digits at 0x3015 ---
         if not all(0x30 <= b <= 0x39 for b in data[GM_PN_CHECK_START:GM_PN_CHECK_END]):
+            self._set_evidence()
             return False
+        evidence.append("GM_PART_NUMBER")
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

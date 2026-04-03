@@ -98,6 +98,10 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    FAMILY_STRING,
+    IDENT_BLOCK,
+    SIZE_MATCH,
 )
 from openremap.tuning.manufacturers.bosch.m5x.patterns import (
     DETECTION_SIGNATURES,
@@ -168,17 +172,22 @@ class BoschM5xExtractor(BaseManufacturerExtractor):
                     ident block with MOTR/MOTRONIC/MOTOR anchor.
                     Stricter pattern required here to avoid false positives.
         """
+        evidence: list[str] = []
         search_area = data[:0x80000]
         ident_area = data[:0x10000]
 
         # Phase 1 — exclusion check
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — size gate
         if len(data) not in SUPPORTED_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Check for the combined ident block (anchor + HW + 12-digit SW + /n/family)
         has_ident = bool(re.search(PATTERNS["ident_block"], ident_area))
@@ -186,6 +195,9 @@ class BoschM5xExtractor(BaseManufacturerExtractor):
         # Phase 3 — primary signature + ident block
         has_primary = any(sig in ident_area for sig in DETECTION_SIGNATURES)
         if has_primary and has_ident:
+            evidence.append(FAMILY_STRING)
+            evidence.append(IDENT_BLOCK)
+            self._set_evidence(evidence)
             return True
 
         # Phase 4 — ident block alone (M3.8x bins without explicit M5. string)
@@ -193,8 +205,12 @@ class BoschM5xExtractor(BaseManufacturerExtractor):
         # MOTR covers Formats A, B, C (MOTR is a substring of MOTRONIC).
         # MOTOR covers Format D (MOTOR    PMC) where MOTR is not a substring.
         if has_ident and (MOTR_ANCHOR in ident_area or MOTOR_ANCHOR in ident_area):
+            evidence.append(IDENT_BLOCK)
+            evidence.append("MOTR_ANCHOR")
+            self._set_evidence(evidence)
             return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

@@ -26,6 +26,11 @@ import hashlib
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    FAMILY_ANCHOR,
+    HEADER_MATCH,
+    MANUFACTURER_CONFIRM,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -93,33 +98,48 @@ class MarelliIAW1AVExtractor(BaseManufacturerExtractor):
              the binary.  The lowercase family tag provides a second,
              independent confirmation of the ECU family.
         """
+        evidence: list[str] = []
+
         # Phase 1 — size gate: IAW 1AV binaries are exactly 64KB.
         if len(data) != IAW_1AV_FILE_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 2 — header check: first 16 bytes must all be 0xFF.
         header = data[:ERASED_HEADER_SIZE]
         if not all(b == ERASED_HEADER_BYTE for b in header):
+            self._set_evidence()
             return False
+        evidence.append(HEADER_MATCH)
 
         # Phase 3 — exclusion: reject if any non-IAW-1AV signature is found.
         for excl in EXCLUSION_SIGNATURES:
             if excl in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 4 — Marelli confirmation: manufacturer name must be present.
         if b"MARELLI" not in data:
+            self._set_evidence()
             return False
+        evidence.append(MANUFACTURER_CONFIRM)
 
         # Phase 5 — family anchor: "1AV" must be in the ident area.
         ident_area = data[IDENT_AREA_START:IDENT_AREA_END]
         if b"1AV" not in ident_area:
+            self._set_evidence()
             return False
+        evidence.append(FAMILY_ANCHOR)
 
         # Phase 6 — secondary confirm: lowercase "iaw1av" must be present.
         if b"iaw1av" not in data:
+            self._set_evidence()
             return False
+        evidence.append("IAW1AV_CONFIRM")
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

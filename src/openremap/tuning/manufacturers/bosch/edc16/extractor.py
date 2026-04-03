@@ -108,6 +108,11 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    FAMILY_STRING,
+    LAYOUT_FINGERPRINT,
+    MAGIC_MATCH,
+    SIZE_MATCH,
 )
 from openremap.tuning.manufacturers.bosch.edc16.patterns import (
     ACTIVE_STARTS_BY_SIZE,
@@ -143,7 +148,9 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
 
     SW version is read from active_start + 0x10 — the active section is
     detected first via the \xde\xca\xfe magic at active_start + 0x3d.
-    HW number is never stored as plain ASCII in EDC16 binaries — always None.
+    HW number may be present as plain ASCII in some variants (Opel EDC16C9,
+    some VAG PD and BMW C31/C35 bins). Searched in multiple regions with
+    boundary-safe patterns.
     """
 
     # -----------------------------------------------------------------------
@@ -204,6 +211,8 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         in _detect_active_start() during extraction — detection only needs
         to confirm the file is EDC16, not which sub-variant it is.
         """
+        evidence: list[str] = []
+
         # Search the full binary for exclusion signatures.  Earlier versions
         # searched only data[:0x80000] (first 512KB), but ME7.1.1 bins
         # (e.g. VW Golf 5 R32 3.2 VR6, 1MB) store all identity strings
@@ -215,7 +224,9 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         # Phase 1 — reject on any exclusion signature
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — reject unknown file sizes, with two exceptions:
         #   a) Raw active-section dump at offset 0 (DECAFE at 0x3D).
@@ -227,7 +238,9 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
             snapped = self._snap_size(len(data))
             _raw_sector = len(data) >= 0x40 and data[0x3D:0x40] == EDC16_HEADER_MAGIC
             if snapped is None and not _raw_sector:
+                self._set_evidence()
                 return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 3a — accept on \xde\xca\xfe magic at any known offset.
         # Use the snapped size for the lookup so that files with trailing
@@ -237,10 +250,14 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         for offset in MAGIC_OFFSETS_BY_SIZE.get(lookup_size, []):
             end = offset + len(EDC16_HEADER_MAGIC)
             if len(data) >= end and data[offset:end] == EDC16_HEADER_MAGIC:
+                evidence.append(MAGIC_MATCH)
+                self._set_evidence(evidence)
                 return True
 
         # Phase 3b — fallback: accept on EDC16 family string
         if any(sig in data for sig in DETECTION_SIGNATURES):
+            evidence.append(FAMILY_STRING)
+            self._set_evidence(evidence)
             return True
 
         # Phase 4 — encrypted / scrambled EDC16C8 layout fingerprint.
@@ -279,9 +296,13 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
                 # layout but are not EDC16.
                 _me7_sigs = [b"ME7.", b"ME 7.", b"ME71", b"ME731", b"MOTRONIC"]
                 if any(sig in data for sig in _me7_sigs):
+                    self._set_evidence()
                     return False
+                evidence.append(LAYOUT_FINGERPRINT)
+                self._set_evidence(evidence)
                 return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------
@@ -314,18 +335,16 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
 
         # --- Step 3: Resolve ECU family and variant ---
         ecu_variant = self._resolve_ecu_variant(data, active_start)
-        result["ecu_family"] = ecu_variant or "EDC16"
+        result["ecu_family"] = "EDC16"
         result["ecu_variant"] = ecu_variant
 
         # --- Step 4: Resolve SW version from detected active section ---
         software_version = self._resolve_software_version(data, active_start)
         result["software_version"] = software_version
 
-        # --- Step 5: HW number — not present in VAG EDC16 bins, but Opel
-        #     EDC16C9 (Vectra-C/Signum/Astra-H) stores it as plain ASCII
-        #     null-terminated in the calibration area, e.g. "0281013409".
-        #     Attempt a scan of the cal area; fall back to None if absent.
-        result["hardware_number"] = self._resolve_hardware_number(data)
+        # --- Step 5: HW number — search multiple regions (active header,
+        #     cal area, mirror offsets) for Bosch HW part numbers.
+        result["hardware_number"] = self._resolve_hardware_number(data, active_start)
 
         # --- Step 6: Fields not present in EDC16 binaries ---
         result["calibration_version"] = None
@@ -333,7 +352,7 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
         result["serial_number"] = None
         result["dataset_number"] = None
         result["calibration_id"] = None
-        result["oem_part_number"] = None
+        result["oem_part_number"] = self._resolve_oem_part_number(data)
 
         # --- Step 7: Build match key ---
         result["match_key"] = self.build_match_key(
@@ -548,36 +567,121 @@ class BoschEDC16Extractor(BaseManufacturerExtractor):
     # Internal — HW number resolver
     # -----------------------------------------------------------------------
 
-    def _resolve_hardware_number(self, data: bytes) -> Optional[str]:
+    def _resolve_hardware_number(
+        self, data: bytes, active_start: Optional[int] = None
+    ) -> Optional[str]:
         """
         Attempt to recover the Bosch hardware part number (e.g. "0281013409").
 
-        In standard VAG EDC16 bins (C8, C39, PD) the HW number is never
-        stored as plain ASCII — it is only available from the OBD service or
-        the physical ECU label.  For those bins this method returns None.
+        Many EDC16 variants embed the 10-digit HW number as plain ASCII in
+        one or more regions of the binary:
+          - Opel EDC16C9 (Vectra-C, Signum, Astra-H) in the cal area
+          - BMW EDC16C31/C35 in the active header or extended active window
+          - Some VAG PD bins in mirror regions
 
-        Opel EDC16C9 bins (Vectra-C, Signum, Astra-H) are an exception: they
-        embed the 10-digit HW number as a null-terminated ASCII string in the
-        calibration data area, typically surrounded by other ident fields:
-            ...Z19DT\x000281013409\x00B06003...
+        Strategy — search multiple regions in priority order:
+          1. Active header window (active_start .. active_start + 0x800)
+          2. Calibration area (last 256 KB)
+          3. Active extended window (active_start .. active_start + 0x100000)
+             for large (2 MB) BMW bins
+          4. Boot sector (0x0000 .. active_start) — catches BMW EDC16C31/C35
+             bins where the HW number lives in the boot area (e.g. at 0xBE27
+             for 2MB or 0x65E7 for 1MB)
+          5. Full binary — last resort fallback
 
-        Strategy:
-          1. Search the calibration area (last 256 KB) for the pattern
-             "0281" + 6 decimal digits (10 chars total).
-          2. Require that the match is surrounded by non-digit bytes on both
-             sides (null, space, or other non-printable) so we do not
-             accidentally clip a longer numeric run.
-          3. Return the first hit, or None if nothing matches.
+        Within each region, try patterns in priority order:
+          a. Standard Bosch diesel HW: 0281 + 6 digits
+          b. Bosch petrol HW: 0261 + 6 digits
+          c. Broader Bosch HW with optional spaces/dots: 0.281.xxx.xxx
+
+        Accept the first match where surrounding bytes are non-digit.
+        Normalize by removing spaces and dots. Reject all-zero values.
 
         Returns:
             10-character HW number string (e.g. "0281013409"), or None.
         """
-        cal_area = data[SEARCH_REGIONS["cal_area"]]
-        m = re.search(rb"(?<!\d)(0281\d{6})(?!\d)", cal_area)
+        size = len(data)
+
+        # -- Build search regions in priority order --------------------------
+        regions: list[bytes] = []
+
+        # 1. Active header window
+        if active_start is not None:
+            end = min(active_start + 0x800, size)
+            if active_start < size:
+                regions.append(data[active_start:end])
+
+        # 2. Cal area (last 256 KB)
+        regions.append(data[SEARCH_REGIONS["cal_area"]])
+
+        # 3. Active extended window (for 2 MB BMW bins)
+        if active_start is not None and size >= 0x200000:
+            end = min(active_start + 0x100000, size)
+            if active_start < size:
+                regions.append(data[active_start:end])
+
+        # 4. Boot sector (before active_start) — BMW EDC16C31/C35 bins store
+        #    the HW number in the boot area at offsets like 0xBE27 (2MB) or
+        #    0x65E7 (1MB), well beyond the narrow mirror windows.
+        if active_start is not None and active_start > 0:
+            regions.append(data[0x0000:active_start])
+
+        # 5. Full binary — last resort; the 0281/0261 patterns are specific
+        #    enough (10-digit Bosch part number bounded by non-digits) that
+        #    false positives across the full file are extremely unlikely.
+        regions.append(data)
+
+        # -- Patterns in priority order --------------------------------------
+        patterns = [
+            rb"(?<!\d)(0281\d{6})(?!\d)",  # standard Bosch diesel
+            rb"(?<!\d)(0261\d{6})(?!\d)",  # Bosch petrol
+            rb"(?<!\d)(0[\s\.]?281[\s\.]?\d{3}[\s\.]?\d{3})(?!\d)",  # spaced
+        ]
+
+        for region in regions:
+            for pat in patterns:
+                m = re.search(pat, region)
+                if m:
+                    raw = m.group(1).decode("ascii", errors="ignore")
+                    val = raw.replace(" ", "").replace(".", "").strip()
+                    if val and not re.match(r"^0+$", val):
+                        return val
+
+        return None
+
+    # -----------------------------------------------------------------------
+    # Internal — OEM part number resolver
+    # -----------------------------------------------------------------------
+
+    def _resolve_oem_part_number(self, data: bytes) -> Optional[str]:
+        """
+        Attempt to extract an OEM (vehicle-manufacturer) part number.
+
+        Searches the full binary for common OEM part number formats:
+          - VAG: e.g. "03G906016J", "03L 906 018 AJ"
+          - BMW: e.g. "12 14 7 626 350"
+
+        Returns:
+            Normalized OEM part number string, or None.
+        """
+        # VAG pattern: 0[2-9]X NNN NNN [XX]  (with optional spaces)
+        m = re.search(
+            rb"(?<![A-Z0-9])0[2-9][A-Z][\s]?\d{3}[\s]?\d{3}(?:[\s]?[A-Z]{1,2})?(?![A-Z0-9])",
+            data,
+        )
         if m:
-            val = m.group(1).decode("ascii", errors="ignore").strip()
-            if val and not re.match(r"^0+$", val):
-                return val
+            val = m.group(0).decode("ascii", errors="ignore")
+            return val.replace(" ", "").strip()
+
+        # BMW pattern: NN NN N NNN NNN
+        m = re.search(
+            rb"(?<!\d)\d{2}[\s]\d{2}[\s]\d{1}[\s]\d{3}[\s]\d{3}(?!\d)",
+            data,
+        )
+        if m:
+            val = m.group(0).decode("ascii", errors="ignore")
+            return val.replace(" ", "").strip()
+
         return None
 
     def _read_sw_at(self, data: bytes, offset: int) -> Optional[str]:

@@ -174,3 +174,16 @@ The `context_size` used during cooking can be increased with `--context-size` fo
 - **All-or-nothing validation.** The strict validator checks every instruction before the patcher writes a single byte. A single failure aborts the entire operation.
 - **Identity gate.** `match_key` and `file_size` are verified against the target binary before any instruction is read. A wrong ECU is rejected before any byte-level work begins.
 - **Portable.** Recipes contain no absolute paths, no machine-specific data, and no binary blobs. They are plain JSON and can be stored, versioned, shared, and diffed like any other text file.
+
+---
+
+## See also
+
+- [Cook command](commands/cook.md) — how to create a recipe from two binaries
+- [Tune command](commands/tune.md) — one-shot validate → apply → verify
+- [Validate command](commands/validate.md) — individual validation steps
+- [About OpenRemap](about.md) — project overview and use cases
+
+---
+
+← [Back to documentation](README.md)

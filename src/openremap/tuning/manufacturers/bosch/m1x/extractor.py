@@ -146,6 +146,10 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    HEADER_MATCH,
+    IDENT_BLOCK,
+    SIZE_MATCH,
 )
 
 # ---------------------------------------------------------------------------
@@ -352,15 +356,20 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
             sw=1267xxxxxx uniquely identify M1.x petrol ECUs regardless of
             manufacturer.
         """
+        evidence: list[str] = []
         search_area = data[:0x80000]
 
         # Phase 1 — reject on any exclusion signature
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2a — primary: ROM header magic at offset 0
         if data[:4] == DETECTION_MAGIC:
+            evidence.append(HEADER_MATCH)
+            self._set_evidence(evidence)
             return True
 
         # Phase 2d — M1.8 (Volvo): M0.0 family marker + M1.8 string
@@ -368,6 +377,8 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
         # and the file would otherwise fall through to _fallback_ident_valid()
         # which would reject it (no reversed-digit ident).
         if len(data) in FALLBACK_VALID_SIZES and self._is_m18(data):
+            evidence.append("M18_MARKER")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2b/2c — size gate + ident fallback (BMW and Opel M1.x variants)
@@ -383,9 +394,17 @@ class BoschM1xExtractor(BaseManufacturerExtractor):
         #
         # Both variants must be exactly 32KB or 64KB in size.
         if len(data) not in FALLBACK_VALID_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
-        return self._fallback_ident_valid(data)
+        if self._fallback_ident_valid(data):
+            evidence.append(IDENT_BLOCK)
+            self._set_evidence(evidence)
+            return True
+
+        self._set_evidence()
+        return False
 
     # -----------------------------------------------------------------------
     # Internal — fallback ident validity check (used by can_handle Phase 2b/2c)

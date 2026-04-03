@@ -31,6 +31,11 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    DETECTION_SIGNATURE,
+    EXCLUSION_CLEAR,
+    HEADER_MATCH,
+    IDENT_BLOCK,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -128,18 +133,26 @@ class SiemensSimtec56Extractor(BaseManufacturerExtractor):
 
         All five phases must pass for the binary to be claimed.
         """
+        evidence: list[str] = []
+
         # --- Phase 1: Size gate ---
         if len(data) != SIMTEC56_FILE_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # --- Phase 2: Exclusion signatures ---
         for sig in EXCLUSION_SIGNATURES:
             if sig in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # --- Phase 3: Detection signatures ---
         if not any(sig in data for sig in DETECTION_SIGNATURES):
+            self._set_evidence()
             return False
+        evidence.append(DETECTION_SIGNATURE)
 
         # --- Phase 4: RS/RT ident record prefix ---
         # Look for R[ST] followed by 8 digits — the canonical Simtec 56
@@ -148,12 +161,17 @@ class SiemensSimtec56Extractor(BaseManufacturerExtractor):
         # the 5WK9 prefix but have completely different ident formats.
         has_ident = any(prefix in data for prefix in IDENT_PREFIXES)
         if not has_ident:
+            self._set_evidence()
             return False
+        evidence.append(IDENT_BLOCK)
 
         # --- Phase 5: Header magic ---
         if data[:3] != SIMTEC56_HEADER:
+            self._set_evidence()
             return False
+        evidence.append(HEADER_MATCH)
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

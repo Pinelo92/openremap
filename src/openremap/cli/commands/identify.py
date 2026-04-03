@@ -137,7 +137,7 @@ def identify(
 
     Prints manufacturer, ECU family, software version, hardware number,
     calibration ID, match key, file size, SHA-256 hash, and a confidence
-    assessment of how likely the binary is to be an unmodified factory file.
+    assessment of how reliably the binary was identified.
     """
     suffix = file.suffix.lower()
     if suffix not in (".bin", ".ori"):

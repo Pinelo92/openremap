@@ -60,6 +60,8 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    DETECTION_SIGNATURE,
+    EXCLUSION_CLEAR,
 )
 
 # ---------------------------------------------------------------------------
@@ -174,9 +176,22 @@ class BoschME9Extractor(BaseManufacturerExtractor):
              BoschExtractor.
           2. Accept if the ME9 RAM-loader anchor is found in the first 2 MB.
         """
+        evidence: list[str] = []
+
+        # Phase 1 — exclusion: reject if MED9 marker is present
         if _MED9_MARKER in data:
+            self._set_evidence()
             return False
-        return _ME9_ANCHOR in data[:0x200000]
+        evidence.append(EXCLUSION_CLEAR)
+
+        # Phase 2 — accept on ME9 RAM-loader anchor
+        if _ME9_ANCHOR in data[:0x200000]:
+            evidence.append(DETECTION_SIGNATURE)
+            self._set_evidence(evidence)
+            return True
+
+        self._set_evidence()
+        return False
 
     # -----------------------------------------------------------------------
     # Extraction

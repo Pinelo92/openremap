@@ -14,6 +14,8 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    DETECTION_SIGNATURE,
 )
 from openremap.tuning.manufacturers.bosch.edc17.patterns import (
     DETECTION_SIGNATURES,
@@ -81,6 +83,8 @@ class BoschExtractor(BaseManufacturerExtractor):
              BoschEDC15Extractor runs before this extractor in the registry;
              this check is a safety net only.
         """
+        evidence: list[str] = []
+
         # ------------------------------------------------------------------
         # Guard 1a — reject EDC16 bins via \xde\xca\xfe magic + size check.
         # EDC16 active-section magic offsets, keyed by file size:
@@ -99,6 +103,7 @@ class BoschExtractor(BaseManufacturerExtractor):
             magic_end = len(_EDC16_MAGIC)
             for offset in _EDC16_MAGIC_OFFSETS[size]:
                 if data[offset : offset + magic_end] == _EDC16_MAGIC:
+                    self._set_evidence()
                     return False
 
         # ------------------------------------------------------------------
@@ -107,6 +112,7 @@ class BoschExtractor(BaseManufacturerExtractor):
         # family descriptor is still readable.
         # ------------------------------------------------------------------
         if b"EDC16" in data[:0x80000]:
+            self._set_evidence()
             return False
 
         # ------------------------------------------------------------------
@@ -117,6 +123,7 @@ class BoschExtractor(BaseManufacturerExtractor):
             b"TSW " in data[bank * 0x80000 + 0x8000 : bank * 0x80000 + 0x8060]
             for bank in range(num_banks)
         ):
+            self._set_evidence()
             return False
 
         # ------------------------------------------------------------------
@@ -128,6 +135,7 @@ class BoschExtractor(BaseManufacturerExtractor):
         # (e.g. "MED9510/..." or "MED91/...") while pure ME9 bins do not.
         # ------------------------------------------------------------------
         if b"RamLoader.Me9" in data[:0x200000] and b"MED9" not in data:
+            self._set_evidence()
             return False
 
         # ------------------------------------------------------------------
@@ -146,6 +154,7 @@ class BoschExtractor(BaseManufacturerExtractor):
             and data[0x10000:0x10002] == b"ZZ"
             and 0x20 <= data[0x10002] <= 0x7E
         ):
+            self._set_evidence()
             return False
 
         # ------------------------------------------------------------------
@@ -167,9 +176,19 @@ class BoschExtractor(BaseManufacturerExtractor):
             b"MOTRONIC",  # Bosch Motronic label — present in most ME7 bins
         )
         if any(sig in data for sig in _ME7_FAMILY_SIGNATURES):
+            self._set_evidence()
             return False
 
-        return any(sig in data for sig in DETECTION_SIGNATURES)
+        # All exclusion guards passed
+        evidence.append(EXCLUSION_CLEAR)
+
+        if any(sig in data for sig in DETECTION_SIGNATURES):
+            evidence.append(DETECTION_SIGNATURE)
+            self._set_evidence(evidence)
+            return True
+
+        self._set_evidence()
+        return False
 
     # -----------------------------------------------------------------------
     # Extraction

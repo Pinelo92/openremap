@@ -56,6 +56,9 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    HEADER_MATCH,
+    SIZE_MATCH,
 )
 from openremap.tuning.manufacturers.bosch.mono.patterns import (
     DEFAULT_FAMILY,
@@ -131,29 +134,41 @@ class BoschMonoExtractor(BaseManufacturerExtractor):
             VAG part number is still readable.
         """
         sz = len(data)
+        evidence: list[str] = []
 
         # Phase 1 — exclusion check (first 512KB)
         search_area = data[SEARCH_REGIONS["exclusion_area"]]
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — size gate
         if sz not in SUPPORTED_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Header check: 8051 LJMP at offset 0 targeting 0x05xx
         if sz < 2 or data[0] != HEADER_BYTE_0 or data[1] != HEADER_BYTE_1:
+            self._set_evidence()
             return False
+        evidence.append(HEADER_MATCH)
 
         # Phase 3 — PMC keyword
         if PMC_KEYWORD in data:
+            evidence.append("PMC_KEYWORD")
+            self._set_evidence(evidence)
             return True
 
         # Phase 4 — VAG 907311 group code fallback
         if VAG_MONO_GROUP_CODE in data:
+            evidence.append("VAG_GROUP_CODE")
+            self._set_evidence(evidence)
             return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

@@ -68,6 +68,8 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    FILL_PATTERN,
 )
 from openremap.tuning.manufacturers.bosch.edc15.patterns import (
     DETECTION_SIGNATURES,
@@ -160,10 +162,14 @@ class BoschEDC15Extractor(BaseManufacturerExtractor):
         """
         search_area = data[:0x80000]
 
+        evidence: list[str] = []
+
         # Phase 1 — reject on any exclusion signature
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — Format A: TSW string at 0x8000 relative to the start of
         # every 512KB bank. A 512KB single-bank bin has TSW at absolute 0x8000
@@ -174,12 +180,17 @@ class BoschEDC15Extractor(BaseManufacturerExtractor):
             for bank in range(num_banks)
             for sig in DETECTION_SIGNATURES
         ):
+            evidence.append("TSW_STRING")
+            self._set_evidence(evidence)
             return True
 
         # Phase 3 — Format B: 0xC3 fill ratio + 1037xxxxxx SW present
         c3_ratio = data.count(b"\xc3") / len(data) if data else 0.0
         if c3_ratio >= EDC15_MIN_C3_RATIO:
             if re.search(rb"1037\d{6,10}", data):
+                evidence.append(FILL_PATTERN)
+                evidence.append("SW_STRING")
+                self._set_evidence(evidence)
                 return True
 
         # Phase 4 — Format D: early EDC15 (VP37/VP44) with alphanumeric SW codes
@@ -187,6 +198,9 @@ class BoschEDC15Extractor(BaseManufacturerExtractor):
         # alphanumeric SW codes (e.g. EBETT200) instead of 1037xxxxxx.
         if c3_ratio >= EDC15_MIN_C3_RATIO:
             if re.search(rb"0281\d{6}\s+EB[A-Z]{2,4}\d{3}HEX", data):
+                evidence.append(FILL_PATTERN)
+                evidence.append("FORMAT_D_IDENT")
+                self._set_evidence(evidence)
                 return True
 
         # Phase 5 — Format E: PP22 header + 0281 HW + (1037 SW or EDC ident)
@@ -200,8 +214,16 @@ class BoschEDC15Extractor(BaseManufacturerExtractor):
                 has_sw = bool(re.search(rb"1037\d{6,10}", data))
                 has_edc_ident = bool(re.search(EDC15_FORMAT_E_IDENT_RE, data))
                 if has_sw or has_edc_ident:
+                    evidence.append("PP22_HEADER")
+                    evidence.append("HW_STRING")
+                    if has_sw:
+                        evidence.append("SW_STRING")
+                    else:
+                        evidence.append("EDC_IDENT")
+                    self._set_evidence(evidence)
                     return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

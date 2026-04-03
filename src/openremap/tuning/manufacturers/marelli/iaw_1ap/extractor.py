@@ -73,6 +73,11 @@ import hashlib
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    FAMILY_ANCHOR as FAMILY_ANCHOR_TAG,
+    HEADER_MATCH,
+    SIZE_MATCH,
+    SYNC_MARKER as SYNC_MARKER_TAG,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -151,28 +156,41 @@ class MarelliIAW1APExtractor(BaseManufacturerExtractor):
             Accept only if the ``AA55CC33`` sync marker is present somewhere
             in the binary.  This provides a second structural confirmation.
         """
+        evidence: list[str] = []
+
         # Phase 1 — size gate
         if len(data) != EXPECTED_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 2 — header check: first 16 bytes must all be 0xFF
         if data[:16] != b"\xff" * 16:
+            self._set_evidence()
             return False
+        evidence.append(HEADER_MATCH)
 
         # Phase 3 — exclusion check (full binary)
         for excl in EXCLUSION_SIGNATURES:
             if excl in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 4 — family anchor: "1ap" in the range 0x5F80–0x5FA0
         family_area = data[SEARCH_REGIONS["family_area"]]
         if FAMILY_ANCHOR not in family_area:
+            self._set_evidence()
             return False
+        evidence.append(FAMILY_ANCHOR_TAG)
 
         # Phase 5 — sync marker: AA55CC33 must be present
         if SYNC_MARKER not in data:
+            self._set_evidence()
             return False
+        evidence.append(SYNC_MARKER_TAG)
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

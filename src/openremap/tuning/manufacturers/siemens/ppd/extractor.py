@@ -22,6 +22,8 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    DETECTION_SIGNATURE,
+    EXCLUSION_CLEAR,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -73,6 +75,8 @@ class SiemensPPDExtractor(BaseManufacturerExtractor):
         the PPD1.x family string may appear at variable offsets depending on
         the dump tool and flash layout.
         """
+        evidence: list[str] = []
+
         # ------------------------------------------------------------------
         # Guard — reject Bosch and other manufacturer signatures.
         # Scans the first 512 KB for speed.
@@ -80,12 +84,20 @@ class SiemensPPDExtractor(BaseManufacturerExtractor):
         exclusion_region = data[:0x80000]
         for sig in EXCLUSION_SIGNATURES:
             if sig in exclusion_region:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # ------------------------------------------------------------------
         # Positive detection — at least one PPD signature must be present.
         # ------------------------------------------------------------------
-        return any(sig in data for sig in DETECTION_SIGNATURES)
+        if any(sig in data for sig in DETECTION_SIGNATURES):
+            evidence.append(DETECTION_SIGNATURE)
+            self._set_evidence(evidence)
+            return True
+
+        self._set_evidence()
+        return False
 
     # -----------------------------------------------------------------------
     # Extraction

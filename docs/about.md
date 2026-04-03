@@ -270,3 +270,17 @@ Concretely, the project aims to:
 OpenRemap is not a tool for bypassing emissions systems, deleting DPF or EGR, circumventing speed limiters, or making any modification that is illegal under the laws of your jurisdiction. Pull requests implementing such functionality will not be accepted. Users are solely responsible for ensuring their use of this software complies with applicable laws and regulations.
 
 Any output produced by OpenRemap — recipes, patched binaries, identification results — is for research and analysis purposes. Flashing modified firmware to a vehicle must be done by a qualified professional who has reviewed and validated the calibration for the specific engine, vehicle, and use case.
+
+---
+
+## Learn more
+
+- [CLI reference](cli.md) — all commands with examples
+- [Recipe format spec](recipe-format.md) — full `.remap` file specification
+- [Confidence scoring](confidence.md) — how identification confidence works
+- [Contributing](../CONTRIBUTING.md) — how to add a new ECU extractor
+- [Disclaimer](../DISCLAIMER.md) — legal, safety, and intended use
+
+---
+
+← [Back to documentation](README.md)

@@ -120,6 +120,8 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -260,13 +262,16 @@ class BoschMotronicLegacyExtractor(BaseManufacturerExtractor):
               data[0] == 0x81 AND data[1] == 0x5C AND len == 32KB.
               Bosch EZK standalone ignition controller ROM.
         """
+        evidence: list[str] = []
         sz = len(data)
 
         # Phase 1 — exclusion (fast path, checked against first 512KB)
         search_area = data[:0x80000]
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2A — DME-3.2 (0x22 + FF×4 + 0x02)
         if (
@@ -276,6 +281,9 @@ class BoschMotronicLegacyExtractor(BaseManufacturerExtractor):
             and data[1:5] == b"\xff\xff\xff\xff"
             and data[5] == 0x02
         ):
+            evidence.append(SIZE_MATCH)
+            evidence.append("DME32_HEADER")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2B — M1.x-early group B (02 02 xx C2 8B)
@@ -287,10 +295,16 @@ class BoschMotronicLegacyExtractor(BaseManufacturerExtractor):
             and data[3] == 0xC2
             and data[4] == 0x8B
         ):
+            evidence.append(SIZE_MATCH)
+            evidence.append("M1X_EARLY_HEADER")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2C — KE-Jetronic (028080/028090 ASCII in last 512 bytes)
         if sz <= _MAX_SIZE and re.search(rb"0280[89]\d{5}", data[-512:]):
+            evidence.append(SIZE_MATCH)
+            evidence.append("KE_JETRONIC_IDENT")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2D — M1.x-early group D (C2 95 02)
@@ -301,24 +315,40 @@ class BoschMotronicLegacyExtractor(BaseManufacturerExtractor):
             and data[1] == 0x95
             and data[2] == 0x02
         ):
+            evidence.append(SIZE_MATCH)
+            evidence.append("M1X_EARLY_D_HEADER")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2E — M1.x-early group E (02 08, Mercedes)
         if sz >= 2 and sz <= _MAX_SIZE and data[0] == 0x02 and data[1] == 0x08:
+            evidence.append(SIZE_MATCH)
+            evidence.append("M1X_EARLY_E_HEADER")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2F — M1.x-early group F (71 00, BMW M3.1/M1.7 early)
         if sz >= 2 and sz <= _MAX_SIZE and data[0] == 0x71 and data[1] == 0x00:
+            evidence.append(SIZE_MATCH)
+            evidence.append("M1X_EARLY_F_HEADER")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2G — M1.x-early group G (C5 C4, early LH2.2 / M-series)
         if sz >= 2 and sz <= _MAX_SIZE and data[0] == 0xC5 and data[1] == 0xC4:
+            evidence.append(SIZE_MATCH)
+            evidence.append("M1X_EARLY_G_HEADER")
+            self._set_evidence(evidence)
             return True
 
         # Phase 2H — EZK ignition (81 5C, exactly 32KB)
         if sz == _MAX_SIZE and data[0] == 0x81 and data[1] == 0x5C:
+            evidence.append(SIZE_MATCH)
+            evidence.append("EZK_HEADER")
+            self._set_evidence(evidence)
             return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

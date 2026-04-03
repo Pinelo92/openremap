@@ -39,6 +39,9 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    FAMILY_STRING,
+    SIZE_MATCH,
 )
 from openremap.tuning.manufacturers.bosch.me7.patterns import (
     DETECTION_SIGNATURES,
@@ -142,13 +145,17 @@ class BoschME7Extractor(BaseManufacturerExtractor):
              ECUs (e.g. Peugeot 207 THP 1.6 150HP) where SW is stored at
              a fixed offset 0x1A, preceded by the record marker \\x02\\x00.
         """
+        evidence: list[str] = []
+
         # Phase 0 — size gate: ME7 ZZ ident block lives at 0x10000, so any
         # genuine ME7 binary must be at least 64KB.  Pre-ME7 legacy binaries
         # (M1.x 32KB, M2.x Porsche 964 32KB, M3.x 32KB, KE-Jetronic ≤32KB)
         # are all ≤ 32KB and cannot be ME7.  Rejecting them here prevents the
         # 'MOTRONIC' string in their ident from triggering Phase 2 below.
         if len(data) < ME7_ZZ_OFFSET:  # < 0x10000 = 64KB
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Search the full binary — ME7.6.2 and other large variants place the
         # family string past 512KB, so bounding the search would miss them.
@@ -159,7 +166,9 @@ class BoschME7Extractor(BaseManufacturerExtractor):
         # Phase 1 — reject if this is a newer Bosch family
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2a — accept on specific ME7 family signatures
         # "ME 7." (with space) covers early Volvo ME 7.0 bins where the
@@ -169,12 +178,16 @@ class BoschME7Extractor(BaseManufacturerExtractor):
         # have no MOTRONIC label — this string is the only reliable anchor.
         me7_specific = [b"ME7.", b"ME 7.", b"ME71", b"ME731"]
         if any(sig in search_area for sig in me7_specific):
+            evidence.append(FAMILY_STRING)
+            self._set_evidence(evidence)
             return True
 
         # Phase 2b — MOTRONIC label is present, but only accept if ME7 family
         # is also present.  "MOTRONIC" alone appears in other Bosch families
         # (MP9, M1.5.4, etc.) that should not be claimed by this extractor.
         if b"MOTRONIC" in search_area and b"ME7" in search_area:
+            evidence.append("MOTRONIC_CONFIRM")
+            self._set_evidence(evidence)
             return True
 
         # Phase 3 — accept on ZZ prefix at its fixed ident-block offset only.
@@ -189,6 +202,8 @@ class BoschME7Extractor(BaseManufacturerExtractor):
             ] == ME7_ZZ_PREFIX and not (
                 0x20 <= data[ME7_ZZ_OFFSET + len(ME7_ZZ_PREFIX)] <= 0x7E
             ):
+                evidence.append("ZZ_MARKER")
+                self._set_evidence(evidence)
                 return True
 
         # Phase 4 — PSA ME7 calibration sector (64KB, ZZ at offset 0).
@@ -197,6 +212,8 @@ class BoschME7Extractor(BaseManufacturerExtractor):
         # extracted as a standalone 64KB file.  The ZZ marker appears at
         # offset 0 rather than 0x10000.
         if self._is_psa_sector_64kb(data):
+            evidence.append("PSA_SECTOR_64KB")
+            self._set_evidence(evidence)
             return True
 
         # Phase 5 — PSA ME7.4.x calibration sector (256KB, SW at 0x1A).
@@ -206,8 +223,11 @@ class BoschME7Extractor(BaseManufacturerExtractor):
         # excluded: MOTRONIC in Phase 2, M5./M3.8 not in excl but M5x
         # extractor picks them up via MOTR anchor and size gate).
         if self._is_psa_sector_256kb(data):
+            evidence.append("PSA_SECTOR_256KB")
+            self._set_evidence(evidence)
             return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

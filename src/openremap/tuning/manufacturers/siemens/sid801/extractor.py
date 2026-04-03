@@ -22,6 +22,10 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    DETECTION_SIGNATURE,
+    EXCLUSION_CLEAR,
+    HEADER_MATCH,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -101,18 +105,24 @@ class SiemensSID801Extractor(BaseManufacturerExtractor):
         Returns:
             True if this extractor should handle the binary
         """
+        evidence: list[str] = []
+
         # ------------------------------------------------------------------
         # Gate 1 — exact file size
         # ------------------------------------------------------------------
         if len(data) != SID801_FILE_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # ------------------------------------------------------------------
         # Gate 2 — exclusion signatures (reject Bosch / SID803 bins)
         # ------------------------------------------------------------------
         for sig in EXCLUSION_SIGNATURES:
             if sig in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # ------------------------------------------------------------------
         # Gate 3 — at least one positive detection signature
@@ -121,6 +131,8 @@ class SiemensSID801Extractor(BaseManufacturerExtractor):
         # the header/ident area of genuine SID801 binaries.
         detection_region = data[:0x20000]
         if any(sig in detection_region for sig in DETECTION_SIGNATURES):
+            evidence.append(DETECTION_SIGNATURE)
+            self._set_evidence(evidence)
             return True
 
         # ------------------------------------------------------------------
@@ -129,7 +141,13 @@ class SiemensSID801Extractor(BaseManufacturerExtractor):
         # Some SID801 bins have no embedded 5WS4 or PM3 signatures at all
         # (the part number is only in the filename).  These can still be
         # identified by their distinctive first-4-byte header magic.
-        return any(data[: len(hdr)] == hdr for hdr in SID801_HEADERS)
+        if any(data[: len(hdr)] == hdr for hdr in SID801_HEADERS):
+            evidence.append(HEADER_MATCH)
+            self._set_evidence(evidence)
+            return True
+
+        self._set_evidence()
+        return False
 
     # -----------------------------------------------------------------------
     # Extraction

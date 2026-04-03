@@ -3,7 +3,7 @@
 Read an ECU binary and print everything that can be extracted from it:
 manufacturer, ECU family, software version, hardware number, calibration ID,
 match key, file size, SHA-256 hash, and a **confidence assessment** of how
-likely the binary is to be an unmodified factory file.
+reliably the system identified the binary.
 
 Use this to confirm what a binary is before doing anything else with it.
 
@@ -176,10 +176,10 @@ supported — see [CONTRIBUTING.md](../../CONTRIBUTING.md) for how to add one.
 
 | Tier | Meaning |
 |---|---|
-| **HIGH** | All key identifiers present and consistent — binary looks like an unmodified factory file |
-| **MEDIUM** | Most identifiers present, minor concerns only |
+| **HIGH** | All key identifiers present and consistent — strong identification |
+| **MEDIUM** | Most identifiers present, minor gaps |
 | **LOW** | Some identifiers missing or a mild filename signal — usable, but inspect manually |
-| **SUSPICIOUS** | Strong signals of modification, wiped ident, or file tampering — treat with caution |
+| **SUSPICIOUS** | Significant identification gaps or filename red flags — treat with caution |
 | **UNKNOWN** | No extractor matched the binary — family not supported |
 
 Each `Signal` line shows what contributed to the tier. A `+` prefix means the signal increased confidence; a `-` prefix means it reduced it.
@@ -213,5 +213,10 @@ All of the following should be filled in for a fully supported, original binary:
 - The confidence score in the JSON output is a raw numeric value for programmatic use. The `tier` field is the human-readable label.
 
 ---
+
+## See also
+
+- [Confidence scoring](../confidence.md) — how tiers, signals, and warnings work
+- [Supported families](../manufacturers/bosch.md) — Bosch family reference
 
 ← [Back to CLI reference](../cli.md)

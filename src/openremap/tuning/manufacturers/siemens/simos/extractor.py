@@ -36,6 +36,10 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    DETECTION_SIGNATURE,
+    SIZE_MATCH,
+    HEADER_MATCH,
 )
 from openremap.tuning.manufacturers.siemens.simos.patterns import (
     DETECTION_SIGNATURES,
@@ -89,6 +93,7 @@ class SiemensSimosExtractor(BaseManufacturerExtractor):
              matches the expected bytes for that size, return True.
           4. Otherwise return False.
         """
+        evidence: list[str] = []
         size = len(data)
 
         # ------------------------------------------------------------------
@@ -98,7 +103,9 @@ class SiemensSimosExtractor(BaseManufacturerExtractor):
         scan_region = data[: min(size, 0x80000)]
         for sig in EXCLUSION_SIGNATURES:
             if sig in scan_region:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # ------------------------------------------------------------------
         # Positive check 1 — definitive keyword signatures.
@@ -106,6 +113,8 @@ class SiemensSimosExtractor(BaseManufacturerExtractor):
         # ------------------------------------------------------------------
         for sig in DETECTION_SIGNATURES:
             if sig in data:
+                evidence.append(DETECTION_SIGNATURE)
+                self._set_evidence(evidence)
                 return True
 
         # ------------------------------------------------------------------
@@ -119,14 +128,24 @@ class SiemensSimosExtractor(BaseManufacturerExtractor):
         # ------------------------------------------------------------------
         if size in VALID_SIZES and len(data) >= 2:
             if size == 524288 and data[:2] == SIMOS_524KB_HEADER:
+                evidence.append(SIZE_MATCH)
+                evidence.append(HEADER_MATCH)
+                self._set_evidence(evidence)
                 return True
             if size == 262144:
                 header2 = data[:2]
                 if any(header2 == prefix for prefix in SIMOS_262KB_HEADERS):
+                    evidence.append(SIZE_MATCH)
+                    evidence.append(HEADER_MATCH)
+                    self._set_evidence(evidence)
                     return True
             if size == 131072 and data[:1] == SIMOS_131KB_HEADER:
+                evidence.append(SIZE_MATCH)
+                evidence.append(HEADER_MATCH)
+                self._set_evidence(evidence)
                 return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

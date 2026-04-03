@@ -61,9 +61,11 @@ The `+20` hardware number bonus is awarded when `hardware_number` is present in 
 | Tier | Score |
 |---|---|
 | **High** | ≥ 55 |
-| **Medium** | 30–54 |
-| **Low** | 10–29 |
-| **Suspicious** | < 10 or conflicting signals |
+| **Medium** | 25–54 |
+| **Low** | 0–24 |
+| **Suspicious** | < 0 |
+
+> See [confidence.md](../confidence.md) for the full scoring specification.
 
 ### IDENT BLOCK MISSING warning
 

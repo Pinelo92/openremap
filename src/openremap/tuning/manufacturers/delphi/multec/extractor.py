@@ -61,6 +61,10 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    HEADER_MATCH,
+    IDENT_BLOCK,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -140,30 +144,44 @@ class DelphiMultecExtractor(BaseManufacturerExtractor):
         Returns:
             True if this extractor should handle the binary.
         """
+        evidence: list[str] = []
+
         # Phase 1 — size gate (fastest check, no byte scanning)
         size = len(data)
         if size not in SUPPORTED_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 2 — exclusion check (reject binaries from other manufacturers)
         for excl in EXCLUSION_SIGNATURES:
             if excl in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 3 — positive header check (at least one variant must match)
         variant_a = len(data) >= 6 and all(0x30 <= b <= 0x39 for b in data[0:6])
         variant_b = len(data) >= 4 and data[0:1] == b"\x11" and data[1:4] == b"DEL"
 
         if not (variant_a or variant_b):
+            self._set_evidence()
             return False
+        if variant_a:
+            evidence.append(HEADER_MATCH)  # variant A all-digit header
+        if variant_b:
+            evidence.append(HEADER_MATCH)  # variant B \x11DEL header
 
         # Phase 4 — ident confirmation in the last 40% of the file
         tail_start = size - int(size * 0.4)
         tail_data = data[tail_start:]
         ident_pattern = rb"\d{8} [A-Z]{2}[A-Z]{4}\x00"
         if not re.search(ident_pattern, tail_data):
+            self._set_evidence()
             return False
+        evidence.append(IDENT_BLOCK)
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

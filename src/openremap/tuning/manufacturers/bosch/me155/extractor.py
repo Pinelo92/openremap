@@ -27,6 +27,9 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    FAMILY_ANCHOR,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -84,35 +87,48 @@ class BoschME155Extractor(BaseManufacturerExtractor):
              not some other ECU that happens to have "ZZ" + printable at
              that offset.
         """
+        evidence: list[str] = []
+
         # Phase 0 — size gate
         if len(data) not in VALID_FILE_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 1 — exclusion signatures
         # Search the first 256KB — sufficient for all known exclusion strings.
         scan_region = data[:0x40000]
         for excl in EXCLUSION_SIGNATURES:
             if excl in scan_region:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — ZZ marker at 0x10000 with printable third byte
         zz_end = ME155_ZZ_OFFSET + len(ME155_ZZ_PREFIX)
         if len(data) <= zz_end + 1:
+            self._set_evidence()
             return False
         if data[ME155_ZZ_OFFSET:zz_end] != ME155_ZZ_PREFIX:
+            self._set_evidence()
             return False
         # Third byte must be printable ASCII — this is the key differentiator
         # from ME7, which has non-printable bytes (0xFF, 0x00, 0x01) here.
         third_byte = data[zz_end]
         if not (0x20 <= third_byte <= 0x7E):
+            self._set_evidence()
             return False
+        evidence.append("ZZ_MARKER")
 
         # Phase 3 — family anchor confirmation
         # The ZZ descriptor in the ident area must contain "/ME1.5.5/".
         ident_window = data[ME155_ZZ_OFFSET : ME155_ZZ_OFFSET + 0x40]
         if ME155_FAMILY_ANCHOR not in ident_window:
+            self._set_evidence()
             return False
+        evidence.append(FAMILY_ANCHOR)
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

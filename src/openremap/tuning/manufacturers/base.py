@@ -8,13 +8,22 @@ all extraction logic to the correct implementation.
 
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 class DetectionStrength(str, Enum):
     """
     How confident the extractor's ``can_handle()`` detection is.
+
+    .. deprecated::
+        Static detection strength is superseded by evidence-based detection.
+        Extractors should populate ``_last_evidence`` in ``can_handle()``
+        instead.  The confidence scorer now computes a dynamic bonus from
+        the evidence tag count, falling back to this static value only
+        when no evidence tags are present (i.e. the extractor has not been
+        upgraded yet).
 
     The confidence scorer uses this to award a baseline bonus that reflects
     the quality of the match *before* any extracted fields are examined.
@@ -48,6 +57,64 @@ class DetectionStrength(str, Enum):
     WEAK = "weak"
 
 
+# ---------------------------------------------------------------------------
+# Detection evidence
+# ---------------------------------------------------------------------------
+# Standard evidence tag constants.  Extractors should use these where
+# applicable so that the confidence scorer can recognise high-value
+# evidence categories.  Extractors may also emit free-form tags for
+# family-specific checks that don't fit a standard category.
+# ---------------------------------------------------------------------------
+
+# Structural / layout evidence
+SIZE_MATCH = "SIZE_MATCH"  # File size matches known ECU sizes
+MAGIC_MATCH = "MAGIC_MATCH"  # Header / footer / sync magic bytes match
+HEADER_MATCH = "HEADER_MATCH"  # CPU-specific header or boot vector match
+POINTER_TABLE = "POINTER_TABLE"  # CPU pointer / vector table match
+LAYOUT_FINGERPRINT = (
+    "LAYOUT_FINGERPRINT"  # Flash sector layout matches expected pattern
+)
+BOOT_BLOCK = "BOOT_BLOCK"  # Boot block structure confirmed (e.g. erased 0xFF)
+
+# Identity evidence
+FAMILY_STRING = "FAMILY_STRING"  # Family-specific ASCII string found
+DETECTION_SIGNATURE = "DETECTION_SIGNATURE"  # Generic detection signature found
+IDENT_BLOCK = "IDENT_BLOCK"  # Structured ident block found at expected offset
+FAMILY_ANCHOR = "FAMILY_ANCHOR"  # Family anchor tag confirmed (e.g. "6JF", "1ap")
+
+# Cross-check evidence
+EXCLUSION_CLEAR = "EXCLUSION_CLEAR"  # No conflicting family signatures found
+FILL_PATTERN = "FILL_PATTERN"  # Fill-byte ratio matches expected pattern
+SYNC_MARKER = "SYNC_MARKER"  # Sync marker present (e.g. AA55CC33)
+MANUFACTURER_CONFIRM = (
+    "MANUFACTURER_CONFIRM"  # Manufacturer name confirmed (e.g. "MAG", "MARELLI")
+)
+
+
+@dataclass(frozen=True)
+class DetectionResult:
+    """
+    Rich detection result carrying the evidence that led to a match.
+
+    ``can_handle()`` still returns ``bool`` for backward compatibility.
+    Evidence is stored on the extractor instance via ``_last_evidence``
+    and read by the identifier / confidence scorer after a positive match.
+
+    This class is provided for documentation and for any future migration
+    where ``can_handle()`` returns ``DetectionResult`` directly.
+    """
+
+    matched: bool
+    evidence: Tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:  # pragma: no cover
+        return self.matched
+
+    @property
+    def evidence_count(self) -> int:
+        return len(self.evidence)
+
+
 class BaseManufacturerExtractor(ABC):
     """
     Abstract base class for ECU manufacturer-specific binary extractors.
@@ -56,6 +123,48 @@ class BaseManufacturerExtractor(ABC):
       - name         : Human-readable manufacturer name
       - can_handle() : Detect if a binary belongs to this manufacturer
       - extract()    : Extract all identifying information from the binary
+
+    Evidence-based detection
+    ------------------------
+    ``can_handle()`` returns ``bool`` for backward compatibility, but
+    extractors should collect *evidence tags* that describe **why** the
+    binary matched and store them via ``self._set_evidence(tags)``.
+
+    After ``can_handle()`` returns ``True``, callers can read
+    ``extractor.last_detection_evidence`` to obtain the evidence tuple.
+    The confidence scorer uses the evidence count to compute a dynamic
+    detection-quality bonus that replaces the static ``detection_strength``
+    class attribute.
+
+    Standard evidence tags are defined as module-level constants
+    (``SIZE_MATCH``, ``MAGIC_MATCH``, ``FAMILY_STRING``, etc.).
+    Extractors may also emit free-form strings for family-specific checks.
+
+    Migration guide
+    ---------------
+    To upgrade an extractor to evidence-based detection:
+
+    1. At the top of ``can_handle()``, create a local list::
+
+           evidence: list[str] = []
+
+    2. After each successful check, append the appropriate tag::
+
+           evidence.append(SIZE_MATCH)
+
+    3. On every ``return True`` path, call::
+
+           self._set_evidence(evidence)
+           return True
+
+    4. On every ``return False`` path, call::
+
+           self._set_evidence()
+           return False
+
+    Extractors that have NOT been upgraded yet will have an empty evidence
+    tuple, and the confidence scorer will fall back to the static
+    ``detection_strength`` class attribute.
 
     Opt-in fallback key
     -------------------
@@ -94,10 +203,42 @@ class BaseManufacturerExtractor(ABC):
     match_key_fallback_field: Optional[str] = None
 
     # Detection strength — how rigorous can_handle() is.
+    # DEPRECATED: superseded by evidence-based detection.  Retained as a
+    # fallback for extractors that have not been upgraded yet.
     # Subclasses should set this to STRONG, MODERATE, or WEAK.
-    # The confidence scorer awards a baseline bonus based on this value.
+    # The confidence scorer awards a baseline bonus based on this value
+    # only when no evidence tags are present.
     # None is accepted for backward compatibility (treated as MODERATE).
     detection_strength: Optional[DetectionStrength] = None
+
+    # Evidence collected by the most recent can_handle() call.
+    # Extractors populate this via _set_evidence().
+    _last_evidence: Tuple[str, ...] = ()
+
+    # -----------------------------------------------------------------------
+    # Evidence helpers
+    # -----------------------------------------------------------------------
+
+    def _set_evidence(self, evidence: Optional[List[str]] = None) -> None:
+        """
+        Store evidence tags from the current ``can_handle()`` invocation.
+
+        Call with a list of tags on every ``return True`` path.
+        Call with no arguments (or ``None``) on every ``return False`` path
+        to clear stale evidence from a previous call.
+        """
+        self._last_evidence = tuple(evidence) if evidence else ()
+
+    @property
+    def last_detection_evidence(self) -> Tuple[str, ...]:
+        """
+        Evidence tags from the most recent ``can_handle()`` call.
+
+        Returns an empty tuple if:
+          - ``can_handle()`` returned False (evidence is cleared), or
+          - the extractor has not been upgraded to evidence-based detection.
+        """
+        return self._last_evidence
 
     # -----------------------------------------------------------------------
     # Identity
@@ -365,8 +506,10 @@ class BaseManufacturerExtractor(ABC):
 
     def __repr__(self) -> str:
         strength = self.detection_strength.value if self.detection_strength else "unset"
+        ev_count = len(self._last_evidence)
         return (
             f"<{self.__class__.__name__} manufacturer={self.name!r}"
             f" families={self.supported_families}"
-            f" detection={strength}>"
+            f" detection={strength}"
+            f" evidence={ev_count}>"
         )

@@ -38,6 +38,11 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    DETECTION_SIGNATURE as _DETECTION_SIGNATURE_TAG,
+    EXCLUSION_CLEAR,
+    FAMILY_STRING,
+    IDENT_BLOCK,
+    SIZE_MATCH,
 )
 from openremap.tuning.manufacturers.bosch.mp9.patterns import (
     EXCLUSION_SIGNATURES,
@@ -107,27 +112,39 @@ class BoschMP9Extractor(BaseManufacturerExtractor):
                     Covers any variant where the full label might be
                     slightly different but the key markers are present.
         """
+        evidence: list[str] = []
+
         # Phase 1 — exclusion check
         for excl in EXCLUSION_SIGNATURES:
             if excl in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — size gate
         if len(data) not in SUPPORTED_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Search area: last 2 KB
         ident_area = data[-0x800:]
 
         # Phase 3 — primary detection signature
         if PRIMARY_DETECTION_SIGNATURE in ident_area:
+            evidence.append(_DETECTION_SIGNATURE_TAG)
+            self._set_evidence(evidence)
             return True
 
         # Phase 4 — secondary: MP9 + HW pattern
         if SECONDARY_DETECTION_SIGNATURE in ident_area:
             if re.search(rb"0261\d{6}", ident_area):
+                evidence.append(FAMILY_STRING)
+                evidence.append(IDENT_BLOCK)
+                self._set_evidence(evidence)
                 return True
 
+        self._set_evidence()
         return False
 
     # ------------------------------------------------------------------

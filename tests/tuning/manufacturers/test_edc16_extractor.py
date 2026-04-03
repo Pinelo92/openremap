@@ -566,13 +566,14 @@ class TestExtractFamilyAndVariant:
         assert result["ecu_variant"] is None
 
     def test_ecu_family_detected_when_string_present(self):
-        """Embed a slash-delimited family descriptor → ecu_family = 'EDC16C8'."""
+        """Embed a slash-delimited family descriptor → ecu_family stays 'EDC16',
+        ecu_variant = 'EDC16C8'."""
         buf = bytearray(make_edc16_256kb_bin())
         # Write the family string in the calibration area (last 256KB of file
         # for the 256KB dump — i.e. anywhere in the file).
         write(buf, 0x3B000, b"EDC16C8/009/C277/ /")
         result = EXTRACTOR.extract(bytes(buf))
-        assert result["ecu_family"] == "EDC16C8"
+        assert result["ecu_family"] == "EDC16"
         assert result["ecu_variant"] == "EDC16C8"
 
     def test_ecu_variant_from_bare_token_in_cal_area(self):
@@ -696,6 +697,141 @@ class TestExtractHardwareNumber:
 
 
 # ---------------------------------------------------------------------------
+# extract() — hardware number expanded search regions
+# ---------------------------------------------------------------------------
+
+
+class TestExtractHardwareNumberExpanded:
+    """Tests for the expanded hardware number search across multiple regions."""
+
+    def test_hw_found_in_active_header_1mb(self):
+        """HW number in active header window (first 2KB after active_start)."""
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0x40200, b"\x000281012754\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281012754"
+
+    def test_hw_found_in_active_header_2mb(self):
+        """HW number in active header of 2MB BMW bin."""
+        buf = bytearray(make_edc16_2mb_bin())
+        write(buf, 0x40100, b"\x000281013252\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281013252"
+
+    def test_hw_found_in_boot_region_1mb(self):
+        """HW number in boot region (mirror at 0x0000-0x0800)."""
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0x0100, b"\x000281010565\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281010565"
+
+    def test_hw_found_in_mirror_region_1mb(self):
+        """HW number in mirror region at 0x80000."""
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0x80100, b"\x000281011564\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281011564"
+
+    def test_hw_petrol_format_0261(self):
+        """Bosch petrol HW number 0261xxxxxx."""
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0xE0000, b"\x000261204983\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0261204983"
+
+    def test_hw_spaced_format_normalized(self):
+        """Spaced Bosch HW number '0 281 013 409' normalized to '0281013409'."""
+        buf = bytearray(make_edc16_256kb_bin())
+        write(buf, 0x3B000, b"\x000 281 013 409\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281013409"
+
+    def test_hw_dotted_format_normalized(self):
+        """Dotted Bosch HW number '0.281.013.409' normalized."""
+        buf = bytearray(make_edc16_256kb_bin())
+        write(buf, 0x3B000, b"\x000.281.013.409\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281013409"
+
+    def test_hw_active_header_takes_priority_over_cal_area(self):
+        """Active header region searched before cal area — first match wins."""
+        buf = bytearray(make_edc16_1mb_bin())
+        # Put different HW numbers in active header and cal area
+        write(buf, 0x40200, b"\x000281012754\x00")  # active header
+        write(buf, 0xE0000, b"\x000281013409\x00")  # cal area
+        result = EXTRACTOR.extract(bytes(buf))
+        # Active header searched first → should find 0281012754
+        assert result["hardware_number"] == "0281012754"
+
+    def test_hw_cal_area_when_no_active_header_match(self):
+        """Fall back to cal area when active header has no HW."""
+        buf = bytearray(make_edc16_1mb_opel_bin())
+        write(buf, 0xE0000, b"\x000281013409\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281013409"
+
+    def test_hw_none_when_no_patterns_anywhere(self):
+        """Still None when no Bosch HW patterns exist in any region."""
+        result = EXTRACTOR.extract(make_edc16_256kb_bin())
+        assert result["hardware_number"] is None
+
+    def test_hw_extended_window_2mb_bmw(self):
+        """Extended active window catches HW in large BMW bins."""
+        buf = bytearray(make_edc16_2mb_bin())
+        # Place HW in extended window (beyond 2KB header, before cal area)
+        write(buf, 0x80000, b"\x000281013854\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["hardware_number"] == "0281013854"
+
+
+# ---------------------------------------------------------------------------
+# extract() — OEM part number
+# ---------------------------------------------------------------------------
+
+
+class TestExtractOemPartNumber:
+    """Tests for OEM part number extraction."""
+
+    def test_oem_part_number_none_when_absent(self):
+        """OEM PN is None when no OEM strings present."""
+        result = EXTRACTOR.extract(make_edc16_256kb_bin())
+        assert result["oem_part_number"] is None
+
+    def test_oem_part_number_key_always_present(self):
+        result = EXTRACTOR.extract(make_edc16_256kb_bin())
+        assert "oem_part_number" in result
+
+    def test_vag_oem_detected(self):
+        """VAG OEM part number extracted from binary."""
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0xC0C00, b"\x0003G906016J\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["oem_part_number"] == "03G906016J"
+
+    def test_vag_oem_with_suffix_letters(self):
+        """VAG OEM part number with 2-letter suffix."""
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0xC0C00, b"\x0003L906018AJ\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["oem_part_number"] == "03L906018AJ"
+
+    def test_vag_oem_with_spaces_normalized(self):
+        """VAG OEM part number with spaces is normalized."""
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0xC0C00, b"\x0003G 906 016 J\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        assert result["oem_part_number"] is not None
+        assert result["oem_part_number"].replace(" ", "") == "03G906016J"
+
+    def test_oem_is_string_when_detected(self):
+        buf = bytearray(make_edc16_1mb_bin())
+        write(buf, 0xC0C00, b"\x0003G906016FF\x00")
+        result = EXTRACTOR.extract(bytes(buf))
+        if result["oem_part_number"] is not None:
+            assert isinstance(result["oem_part_number"], str)
+
+
+# ---------------------------------------------------------------------------
 # extract() — always-None fields
 # ---------------------------------------------------------------------------
 
@@ -704,6 +840,9 @@ class TestExtractAlwaysNoneFields:
     """
     These fields are never populated by the EDC16 extractor — they remain
     None for every binary it claims.
+
+    Note: ``oem_part_number`` was removed from this list because the extractor
+    now resolves it when OEM strings are present in the binary.
     """
 
     ALWAYS_NONE = (
@@ -712,7 +851,6 @@ class TestExtractAlwaysNoneFields:
         "serial_number",
         "dataset_number",
         "calibration_id",
-        "oem_part_number",
     )
 
     def _extract(self) -> dict:
@@ -733,7 +871,8 @@ class TestExtractAlwaysNoneFields:
     def test_calibration_id_always_none(self):
         assert self._extract()["calibration_id"] is None
 
-    def test_oem_part_number_always_none(self):
+    def test_oem_part_number_none_for_plain_bin(self):
+        """oem_part_number is None for a plain 256KB bin with no OEM strings."""
         assert self._extract()["oem_part_number"] is None
 
     def test_all_always_none_fields_present(self):

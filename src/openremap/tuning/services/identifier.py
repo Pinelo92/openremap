@@ -10,13 +10,14 @@ matches.
 Returns the lean identity fields:
     manufacturer, match_key, ecu_family, ecu_variant,
     software_version, hardware_number, calibration_id,
-    oem_part_number, detection_strength, file_size, sha256 (full file).
+    oem_part_number, detection_strength, detection_evidence,
+    file_size, sha256 (full file).
 
 Full rich-extraction logic is preserved cold in the legacy/ reference folder.
 """
 
 import hashlib
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from openremap.tuning.manufacturers import EXTRACTORS
 
@@ -43,7 +44,10 @@ def identify_ecu(data: bytes, filename: str = "unknown.bin") -> Dict:
         if extractor.can_handle(data):
             rich = extractor.extract(data, filename)
             detection_strength = getattr(extractor, "detection_strength", None)
-            return _to_identity(rich, file_size, sha256, detection_strength)
+            detection_evidence = getattr(extractor, "last_detection_evidence", ())
+            return _to_identity(
+                rich, file_size, sha256, detection_strength, detection_evidence
+            )
 
     return _unknown_identity(file_size, sha256)
 
@@ -58,6 +62,7 @@ def _to_identity(
     file_size: int,
     sha256: str,
     detection_strength: Optional[str] = None,
+    detection_evidence: Tuple[str, ...] = (),
 ) -> Dict:
     """
     Map the rich extractor output down to the lean identity fields.
@@ -73,6 +78,11 @@ def _to_identity(
     ``detection_strength`` is injected from the extractor class attribute
     rather than from the rich dict (it is a property of the extractor,
     not of a particular extraction result).
+
+    ``detection_evidence`` is the tuple of evidence tags collected by the
+    extractor's ``can_handle()`` method.  The confidence scorer uses the
+    evidence count and composition to compute a dynamic detection-quality
+    bonus that supersedes the static ``detection_strength`` value.
     """
     return {
         "manufacturer": rich.get("manufacturer"),
@@ -84,6 +94,7 @@ def _to_identity(
         "calibration_id": rich.get("calibration_id"),
         "oem_part_number": rich.get("oem_part_number"),
         "detection_strength": detection_strength,
+        "detection_evidence": detection_evidence,
         "file_size": file_size,
         "sha256": sha256,
     }
@@ -104,6 +115,7 @@ def _unknown_identity(file_size: int, sha256: str) -> Dict:
         "calibration_id": None,
         "oem_part_number": None,
         "detection_strength": None,
+        "detection_evidence": (),
         "file_size": file_size,
         "sha256": sha256,
     }

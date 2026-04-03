@@ -64,6 +64,9 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    FAMILY_STRING,
+    SIZE_MATCH,
 )
 
 # ---------------------------------------------------------------------------
@@ -183,19 +186,34 @@ class BoschM1x55Extractor(BaseManufacturerExtractor):
              (Alfa Romeo variants), OR if b"M1.5.5" is present anywhere in
              the binary (Opel variants — token is at ~0x0D82F, past 64KB mark).
         """
+        evidence: list[str] = []
         search_area = data[:0x80000]
 
         # Phase 1 — exclusion check
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — size gate
         if len(data) != SUPPORTED_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 3 — family token: Alfa M1.55 (first 64KB) or Opel M1.5.5 (anywhere)
-        return DETECTION_SIGNATURE in data[:0x10000] or DETECTION_SIGNATURE_OPEL in data
+        if DETECTION_SIGNATURE in data[:0x10000]:
+            evidence.append(FAMILY_STRING)
+            self._set_evidence(evidence)
+            return True
+        if DETECTION_SIGNATURE_OPEL in data:
+            evidence.append(FAMILY_STRING)
+            self._set_evidence(evidence)
+            return True
+
+        self._set_evidence()
+        return False
 
     # -----------------------------------------------------------------------
     # Extraction

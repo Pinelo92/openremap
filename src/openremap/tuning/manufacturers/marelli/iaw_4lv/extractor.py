@@ -84,6 +84,11 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    HEADER_MATCH,
+    MANUFACTURER_CONFIRM,
+    SIZE_MATCH,
+    SYNC_MARKER as SYNC_MARKER_TAG,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -180,28 +185,41 @@ class MarelliIAW4LVExtractor(BaseManufacturerExtractor):
             last 256 bytes of the file.  This is the IAW 4LV footer sync
             marker (note: byte-reversed from MJD 6JF's ``AA55CC33``).
         """
+        evidence: list[str] = []
+
         # Phase 1 — size gate
         if len(data) != EXPECTED_SIZE:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 2 — header check: first 4 bytes must be M68K boot vector
         if data[:4] != HEADER_MAGIC:
+            self._set_evidence()
             return False
+        evidence.append(HEADER_MATCH)
 
         # Phase 3 — exclusion check (full binary, raw bytes)
         for excl in EXCLUSION_SIGNATURES:
             if excl in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 4 — byte-swapped Marelli: "AMERLL" must be present
         if BYTE_SWAPPED_MARELLI not in data:
+            self._set_evidence()
             return False
+        evidence.append(MANUFACTURER_CONFIRM)
 
         # Phase 5 — footer marker: 55AA33CC in last 256 bytes
         footer_tail = data[-FOOTER_SEARCH_SIZE:]
         if FOOTER_SYNC_MARKER not in footer_tail:
+            self._set_evidence()
             return False
+        evidence.append(SYNC_MARKER_TAG)
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

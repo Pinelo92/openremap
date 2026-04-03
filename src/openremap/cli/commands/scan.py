@@ -680,6 +680,21 @@ def scan(
         # For contested, unknown, and trash we still call score_identity so the
         # "Unknown" tier is reported correctly in the --report output.
         identity_for_scoring: dict = result.extraction or {}
+
+        # Inject evidence-based detection metadata from the winning extractor.
+        # The raw extraction dict does not carry these — they live on the
+        # extractor instance and are populated by can_handle().
+        if result.extractor is not None:
+            identity_for_scoring = dict(identity_for_scoring)  # avoid mutating original
+            identity_for_scoring.setdefault(
+                "detection_evidence",
+                getattr(result.extractor, "last_detection_evidence", ()),
+            )
+            identity_for_scoring.setdefault(
+                "detection_strength",
+                getattr(result.extractor, "detection_strength", None),
+            )
+
         confidence = score_identity(identity_for_scoring, filename=filepath.name)
 
         # --- SHA-256 for the report ---

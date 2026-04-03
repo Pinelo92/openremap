@@ -31,6 +31,11 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    FAMILY_ANCHOR as FAMILY_ANCHOR_TAG,
+    MANUFACTURER_CONFIRM,
+    SIZE_MATCH,
+    SYNC_MARKER as SYNC_MARKER_TAG,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -119,11 +124,15 @@ class MarelliMJD6JFExtractor(BaseManufacturerExtractor):
         binary, so it is deliberately fast: no regex, only byte substring
         searches in bounded regions.
         """
+        evidence: list[str] = []
+
         # ------------------------------------------------------------------
         # Phase 1 — Size gate.
         # ------------------------------------------------------------------
         if len(data) not in VALID_FILE_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # ------------------------------------------------------------------
         # Phase 2 — Exclusion signatures.
@@ -131,29 +140,38 @@ class MarelliMJD6JFExtractor(BaseManufacturerExtractor):
         # ------------------------------------------------------------------
         for sig in EXCLUSION_SIGNATURES:
             if sig in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # ------------------------------------------------------------------
         # Phase 3 — Sync marker (AA55CC33).
         # Must be present at least once anywhere in the binary.
         # ------------------------------------------------------------------
         if SYNC_MARKER not in data:
+            self._set_evidence()
             return False
+        evidence.append(SYNC_MARKER_TAG)
 
         # ------------------------------------------------------------------
         # Phase 4 — Marelli confirmation.
         # b"MAG" must be present in the identity block (0x60000–0x61000).
         # ------------------------------------------------------------------
         if MARELLI_SIGNATURE not in data[0x60000:0x61000]:
+            self._set_evidence()
             return False
+        evidence.append(MANUFACTURER_CONFIRM)
 
         # ------------------------------------------------------------------
         # Phase 5 — Family anchor.
         # b"6JF" must be present in the calibration area (0x60000–0x70000).
         # ------------------------------------------------------------------
         if FAMILY_ANCHOR not in data[0x60000:0x70000]:
+            self._set_evidence()
             return False
+        evidence.append(FAMILY_ANCHOR_TAG)
 
+        self._set_evidence(evidence)
         return True
 
     # -----------------------------------------------------------------------

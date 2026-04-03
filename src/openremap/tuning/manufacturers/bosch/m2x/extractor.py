@@ -87,6 +87,8 @@ from typing import Dict, List, Optional, Tuple
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    FAMILY_STRING,
 )
 
 # ---------------------------------------------------------------------------
@@ -186,15 +188,20 @@ class BoschM2xExtractor(BaseManufacturerExtractor):
              'M00MOTRONIC' or 'M<rev>MOTRONIC' prefix specific to M2.x/M2.3,
              combined with the absence of ME7 strings (already excluded above).
         """
+        evidence: list[str] = []
         search_area = data[:0x80000]
 
         # Phase 1 — reject if any exclusion signature is present
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — accept if the canonical M2.x family marker is found
         if any(sig in search_area for sig in DETECTION_SIGNATURES):
+            evidence.append(FAMILY_STRING)
+            self._set_evidence(evidence)
             return True
 
         # Phase 3 — Porsche 964 M2.3: MOTRONIC label without '"0000000M2.'
@@ -207,8 +214,11 @@ class BoschM2xExtractor(BaseManufacturerExtractor):
         # ME7 MOTRONIC labels follow a completely different format (excluded
         # above via ME7. / ZZ\xff\xff signatures).
         if re.search(rb"M\d{2}MOTRONIC\d{4}\d{7}0261\d{6}", search_area):
+            evidence.append("MOTRONIC_M2_LABEL")
+            self._set_evidence(evidence)
             return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

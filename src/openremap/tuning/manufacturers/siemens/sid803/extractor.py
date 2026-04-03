@@ -65,6 +65,9 @@ import re
 from typing import Dict, List, Optional
 
 from openremap.tuning.manufacturers.base import (
+    DETECTION_SIGNATURE,
+    EXCLUSION_CLEAR,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -141,11 +144,15 @@ class SiemensSID803Extractor(BaseManufacturerExtractor):
         binary, so it is deliberately fast: no regex, only byte substring
         searches in a bounded region.
         """
+        evidence: list[str] = []
+
         # ------------------------------------------------------------------
         # Phase 1 — Size gate.
         # ------------------------------------------------------------------
         if len(data) not in VALID_FILE_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Limit all substring searches to the first 512 KB.  For 458/462 KB
         # files this is effectively the full binary; for 2 MB files it avoids
@@ -158,7 +165,9 @@ class SiemensSID803Extractor(BaseManufacturerExtractor):
         # ------------------------------------------------------------------
         for sig in EXCLUSION_SIGNATURES:
             if sig in scan_region:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # ------------------------------------------------------------------
         # Phase 3 — Detection signatures.
@@ -166,8 +175,11 @@ class SiemensSID803Extractor(BaseManufacturerExtractor):
         # ------------------------------------------------------------------
         for sig in DETECTION_SIGNATURES:
             if sig in scan_region:
+                evidence.append(DETECTION_SIGNATURE)
+                self._set_evidence(evidence)
                 return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

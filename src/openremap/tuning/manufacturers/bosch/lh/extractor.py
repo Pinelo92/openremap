@@ -83,6 +83,9 @@ from typing import Dict, List, Optional, Tuple
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    DETECTION_SIGNATURE,
+    HEADER_MATCH,
 )
 
 # ---------------------------------------------------------------------------
@@ -177,15 +180,20 @@ class BoschLHExtractor(BaseManufacturerExtractor):
           3. Accept if the Format A anchor \\xd5\\x28 is found in the
              last 1KB AND the file starts with a known LH header byte.
         """
+        evidence: list[str] = []
         search_area = data[:0x80000]
 
         # Phase 1 — reject if any exclusion signature is present
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 2 — accept on strong positive signatures
         if any(sig in search_area for sig in DETECTION_SIGNATURES):
+            evidence.append(DETECTION_SIGNATURE)
+            self._set_evidence(evidence)
             return True
 
         # Phase 3 — Format A anchor in last 1KB + LH header byte
@@ -193,8 +201,12 @@ class BoschLHExtractor(BaseManufacturerExtractor):
             # LH-Jetronic ROMs start with \x01\x60, \x01\x40, or \x00\x60.
             # This guards against the anchor appearing in unrelated binaries.
             if len(data) >= 2 and data[0] in (0x00, 0x01):
+                evidence.append(HEADER_MATCH)
+                evidence.append("FORMAT_A_ANCHOR")
+                self._set_evidence(evidence)
                 return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

@@ -174,7 +174,7 @@ The `--family` option accepts the canonical name or any of the listed aliases
 
 - `openremap families` shows the same families that `openremap identify`
   recognises. If a binary is classified as `unknown`, its ECU family is not
-  yet supported — see `CONTRIBUTING.md` to add support.
+  yet supported — see [CONTRIBUTING.md](../../CONTRIBUTING.md) to add support.
 - For complete technical details on ident formats, file sizes, and binary
   layouts, see the manufacturer reference pages:
   [Bosch](../manufacturers/bosch.md) · [Siemens](../manufacturers/siemens.md) · [Delphi](../manufacturers/delphi.md) · [Marelli](../manufacturers/marelli.md).

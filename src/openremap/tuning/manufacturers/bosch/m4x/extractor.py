@@ -72,6 +72,10 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    FAMILY_STRING,
+    IDENT_BLOCK,
+    SIZE_MATCH,
 )
 from openremap.tuning.manufacturers.bosch.m4x.patterns import (
     DETECTION_SIGNATURES,
@@ -169,21 +173,29 @@ class BoschM4xExtractor(BaseManufacturerExtractor):
                     prefix) and the next 10 starting with a recognised SW
                     prefix ("1037", "1267", "2227", or "2537").
         """
+        evidence: list[str] = []
+
         # Phase 1 — size gate (cheapest check)
         if len(data) not in SUPPORTED_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 2 — DAMOS family token (definitive positive — overrides
         # exclusions because tokens like ZZ\xff\xff can false-match in
         # M4.x calibration table data)
         if any(sig in data for sig in DETECTION_SIGNATURES):
+            evidence.append(FAMILY_STRING)
+            self._set_evidence(evidence)
             return True
 
         # Phase 3 — exclusion check (only for fallback detection path)
         search_area = data[:0x80000]  # first 512 KB — covers full file
         for excl in EXCLUSION_SIGNATURES:
             if excl in search_area:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 4 — sequential ident digit run in last ~8 KB
         tail = data[-0x2000:]
@@ -202,8 +214,11 @@ class BoschM4xExtractor(BaseManufacturerExtractor):
                 if hw_candidate.startswith("0261") and sw_candidate.startswith(
                     VALID_SW_PREFIXES
                 ):
+                    evidence.append(IDENT_BLOCK)
+                    self._set_evidence(evidence)
                     return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

@@ -76,6 +76,9 @@ from typing import Dict, List, Optional
 from openremap.tuning.manufacturers.base import (
     BaseManufacturerExtractor,
     DetectionStrength,
+    EXCLUSION_CLEAR,
+    IDENT_BLOCK,
+    SIZE_MATCH,
 )
 
 # ---------------------------------------------------------------------------
@@ -231,19 +234,31 @@ class BoschEDC1Extractor(BaseManufacturerExtractor):
         Returns:
             True if this extractor should handle the binary.
         """
+        evidence: list[str] = []
+
         # Phase 1 — size gate (fastest check, no byte scanning)
         if len(data) not in SUPPORTED_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 2 — exclusion check (scan the whole tiny file; it is at most
         # 64KB so even a full scan is O(64K) and negligible in practice)
         for excl in EXCLUSION_SIGNATURES:
             if excl in data:
+                self._set_evidence()
                 return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 3 — positive ident record at the fixed absolute offset
         ident_window = data[IDENT_REGION]
-        return bool(re.search(IDENT_PATTERN, ident_window))
+        if re.search(IDENT_PATTERN, ident_window):
+            evidence.append(IDENT_BLOCK)
+            self._set_evidence(evidence)
+            return True
+
+        self._set_evidence()
+        return False
 
     # -----------------------------------------------------------------------
     # Extraction

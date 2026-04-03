@@ -183,6 +183,11 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from openremap.tuning.manufacturers.base import (
+    EXCLUSION_CLEAR,
+    FILL_PATTERN,
+    IDENT_BLOCK,
+    MAGIC_MATCH,
+    SIZE_MATCH,
     BaseManufacturerExtractor,
     DetectionStrength,
 )
@@ -486,23 +491,30 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
         Phase 4 — Fallback A: EDC3x header magic at offset 0.
         Phase 5 — Fallback B: high 0xC3 fill ratio (> 15%).
         """
+        evidence: list[str] = []
+
         # Phase 1 — size gate
         if len(data) not in SUPPORTED_SIZES:
+            self._set_evidence()
             return False
+        evidence.append(SIZE_MATCH)
 
         # Phase 2 — exclusion check
         for excl in EXCLUSION_SIGNATURES:
             if excl in data:
+                self._set_evidence()
                 return False
 
         # Reject if TSW appears at the EDC15 Format-A offset — those are EDC15
         # bins, not EDC3x.  TSW at other offsets (e.g. 0xC000 Opel variant) is
         # acceptable and will be positively detected in Phase 6 below.
         if b"TSW" in data[0x7FC0:0x8060]:
+            self._set_evidence()
             return False
 
         # Phase 2b — reject Format-B EDC15 bins that carry a 1037 SW number
         if EDC15_SW_PREFIX in data:
+            self._set_evidence()
             return False
 
         # Phase 2c — reject Format-D EDC15 bins (early VP37/VP44) that carry
@@ -511,7 +523,9 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
         # so without this guard they fall through to Phase 5 (C3 fill
         # catch-all) and get falsely claimed as EDC3x.
         if re.search(rb"0281\d{6}\s+EB[A-Z]{2,4}\d{3}HEX", data):
+            self._set_evidence()
             return False
+        evidence.append(EXCLUSION_CLEAR)
 
         # Phase 3 — primary: VAG ident pattern
         vag_match = re.search(IDENT_PATTERN_VAG, data)
@@ -522,25 +536,36 @@ class BoschEDC3xExtractor(BaseManufacturerExtractor):
                 vag_match.group(3),
             )
             if oem and hw and dataset:
+                evidence.append(IDENT_BLOCK)
+                self._set_evidence(evidence)
                 return True
 
         # Phase 3b — primary: BMW numeric ident patterns (windowed, fast)
         if self._find_bmw_sw_block(data) is not None:
+            evidence.append(IDENT_BLOCK)
+            self._set_evidence(evidence)
             return True
 
         # Phase 4 — fallback A: EDC3x header magic at offset 0
         if data[:10] == VV33_MAGIC or data[:5] == ALT_VV33_MAGIC:
+            evidence.append(MAGIC_MATCH)
+            self._set_evidence(evidence)
             return True
 
         # Phase 5 — fallback B: high 0xC3 fill ratio
         c3_ratio = data.count(b"\xc3") / len(data)
         if c3_ratio >= C3_FILL_THRESHOLD:
+            evidence.append(FILL_PATTERN)
+            self._set_evidence(evidence)
             return True
 
         # Phase 6 — Opel 256KB: TSW at 0xC000 (pre-EDC15 Opel toolchain)
         if len(data) == 0x40000 and b"TSW" in data[OPEL_256_TSW_REGION]:
+            evidence.append("OPEL_TSW")
+            self._set_evidence(evidence)
             return True
 
+        self._set_evidence()
         return False
 
     # -----------------------------------------------------------------------

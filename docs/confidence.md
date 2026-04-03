@@ -1,9 +1,15 @@
 # Confidence Scoring
 
 Every `openremap identify` result and every `openremap scan` line includes a
-confidence assessment — a quick read on how likely a binary is to be an
-unmodified factory file, based on signals read directly from the binary and
-from the filename.
+confidence assessment — a measure of how reliably the system detected and
+identified the ECU binary, based on detection quality, extracted identity
+fields, filename heuristics, and map-structure analysis.
+
+> **What confidence measures:** The score reflects identification quality —
+> how many expected identity fields were successfully extracted and how
+> rigorous the detection cascade was.  It does **not** measure whether the
+> binary content has been modified.  A tuned file with all ident blocks
+> intact will score just as highly as an unmodified one.
 
 ---
 
@@ -11,10 +17,10 @@ from the filename.
 
 | Tier | What it means |
 |---|---|
-| **HIGH** | All key identifiers present and consistent — looks like an unmodified factory file |
-| **MEDIUM** | Most identifiers present, minor concerns only |
-| **LOW** | Some identifiers missing, or a mild filename signal |
-| **SUSPICIOUS** | Strong modification signals — inspect before use |
+| **HIGH** | All key identifiers present and consistent — strong identification |
+| **MEDIUM** | Most identifiers present, minor gaps |
+| **LOW** | Some identifiers missing, or a mild filename concern |
+| **SUSPICIOUS** | Significant identification gaps or filename red flags — inspect before use |
 | **UNKNOWN** | No extractor matched the binary — family not supported |
 
 ---
@@ -64,12 +70,12 @@ from the filename.
 Each signal line shows what contributed to the tier. A `+` prefix raised
 confidence; a `-` prefix lowered it.
 
-### Detection strength baseline
+### Detection quality baseline
 
 The rigour of the extractor's `can_handle()` method sets a baseline score
 before any identity fields are examined.
 
-| Detection strength | Delta | Criteria |
+| Detection quality | Delta | Criteria |
 |---|---|---|
 | STRONG | +15 | 4+ phase detection cascade with unique byte signatures (e.g. Multec S, IAW 1AV) |
 | MODERATE | +10 | 2–3 phase detection (e.g. ME7.x, EDC15) |
@@ -96,6 +102,10 @@ before any identity fields are examined.
 
 ### Filename signals
 
+These are the only signals that relate to file originality rather than
+identification quality.  They flag filenames that suggest the binary may
+have been modified or provide no identifying context.
+
 | Signal | Delta |
 |---|---|
 | Tuning keywords in filename (`stage`, `remap`, `tuned`, `disable`, …) | -25 |
@@ -105,11 +115,11 @@ before any identity fields are examined.
 
 ## Warnings
 
-Warnings flag specific red flags, independent of the tier score:
+Warnings flag specific concerns, independent of the tier score:
 
 | Warning | What it means |
 |---|---|
-| `⚠ IDENT BLOCK MISSING` | SW version absent for a family that always stores one — strong signal of a wiped or tampered ident block |
+| `⚠ IDENT BLOCK MISSING` | SW version absent for a family that always stores one — the ident block may be wiped or unreadable |
 | `⚠ TUNING KEYWORDS IN FILENAME` | Filename contains words associated with modified files (`stage`, `remap`, `tuned`, `evc`, `disable`, …) |
 | `⚠ GENERIC FILENAME` | Bare numbered filename (`1.bin`, `42.bin`) provides no identifying context |
 
@@ -153,14 +163,14 @@ for missing SW or HW.
 
 ---
 
-## Detection strength
+## Detection quality
 
 The extractor's `can_handle()` method varies in rigour across families. A
 6-phase detection cascade that checks magic bytes, block boundaries, address
 maps, and internal checksums provides much stronger evidence of a correct match
 than a 2-phase heuristic that only checks file size and a single byte pattern.
 
-The detection strength baseline reflects this difference:
+The detection quality baseline reflects this difference:
 
 - **STRONG** (+15): Extractors like Multec S and IAW 1AV run 4+ independent
   checks with unique byte signatures. A match is very likely correct.

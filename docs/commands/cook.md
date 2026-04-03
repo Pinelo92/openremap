@@ -85,7 +85,7 @@ openremap cook stock.bin stage1.bin --compact --output recipe.remap
 | Field | What it tells you |
 |---|---|
 | **ECU** | Manufacturer and family extracted from the original binary. Should match what `openremap identify` reported. |
-| **Match Key** | The identity string embedded in the recipe. Any target binary you apply this recipe to must have the same match key, or `validate strict` will warn you. |
+| **Match Key** | The identity string embedded in the recipe. Any target binary you apply this recipe to must have the same match key, or `validate before` will warn you. |
 | **Instructions** | Number of changed byte blocks found. Zero means the two files are identical — check you passed the right files in the right order. |
 | **Bytes Changed** | Total number of bytes that differ. Gives a rough sense of how large the tune is. |
 
@@ -103,7 +103,7 @@ openremap cook stock.bin stage1.bin --compact --output recipe.remap
   right files.
 - **`ECU` shows `Unknown`** — the original binary's ECU family is not yet
   supported. The recipe is still built correctly (all byte differences are
-  captured), but there will be no match key, which means `validate strict`
+  captured), but there will be no match key, which means `validate before`
   and `tune` will not be able to confirm the target is the right ECU.
 - **A read error** — check that both file paths exist and that both files
   end in `.bin` or `.ori`.
@@ -141,5 +141,11 @@ The full recipe format is documented in [`docs/recipe-format.md`](../recipe-form
   exactly what the tune changes before applying it to anything.
 
 ---
+
+## See also
+
+- [Recipe format spec](../recipe-format.md) — full field reference for `.remap` files
+- [Tune command](tune.md) — one-shot validate → apply → verify
+- [Validate command](validate.md) — individual validation steps
 
 ← [Back to CLI reference](../cli.md)

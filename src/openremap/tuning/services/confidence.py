@@ -1,9 +1,21 @@
 """
-ECU binary confidence scorer.
+ECU binary identification confidence scorer.
 
-Computes a numerical "originality" confidence score for an ECU binary, based
-on signals derived from the extracted identity fields, from the filename, and
-from the extractor's detection strength.
+Computes a numerical identification confidence score for an ECU binary, based
+on signals derived from detection quality, extracted identity fields, filename
+heuristics, and map-structure analysis.  The score reflects how confidently the
+system identified this binary — not whether the binary content is original or
+modified.
+
+Higher scores mean the detection cascade matched strongly and more
+identity fields were successfully extracted.  Lower scores mean weaker
+detection or missing fields — the identification may be incomplete or
+unreliable.
+
+The scorer also applies secondary penalties for filename signals that
+suggest the binary may have been modified (tuning keywords, generic
+filenames).  These reduce confidence in the identification because
+modified binaries may have altered or removed identity blocks.
 
 The scorer is **manufacturer-aware** — each manufacturer has its own
 definition of a "canonical" software version format, and each ECU family
@@ -74,7 +86,7 @@ from typing import List, Optional, Set
 # Family field profiles
 # ---------------------------------------------------------------------------
 # Each family declares which identity fields it is *expected* to provide when
-# the binary is a complete, unmodified factory dump.
+# the binary is a complete factory dump.
 #
 # A field NOT listed here is "architecturally absent" for that family — the
 # scorer will not penalise its absence.
@@ -89,49 +101,58 @@ from typing import List, Optional, Set
 
 _FAMILY_FIELD_PROFILES: list[tuple[str, set[str]]] = [
     # ── Bosch — modern TriCore ──────────────────────────────────────────────
-    ("EDC17",   {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
-    ("MEDC17",  {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
-    ("MED17",   {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
-    ("ME17",    {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
-    ("MED9",    {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
-    ("MD1",     {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
+    ("EDC17", {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
+    (
+        "MEDC17",
+        {"software_version", "hardware_number", "calibration_id", "ecu_variant"},
+    ),
+    ("MED17", {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
+    ("ME17", {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
+    ("MED9", {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
+    ("MD1", {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
     # ── Bosch — older families ──────────────────────────────────────────────
-    ("EDC16",   {"software_version", "hardware_number", "calibration_id"}),
-    ("EDC15",   {"software_version", "hardware_number", "calibration_id"}),
-    ("EDC3",    {"software_version", "hardware_number"}),
-    ("EDC1",    {"software_version", "hardware_number"}),
-    ("ME9",     {"software_version"}),
-    ("ME7",     {"software_version", "hardware_number", "calibration_id"}),
+    ("EDC16", {"software_version", "hardware_number", "calibration_id"}),
+    ("EDC15", {"software_version", "hardware_number", "calibration_id"}),
+    ("EDC3", {"software_version", "hardware_number"}),
+    ("EDC1", {"software_version", "hardware_number"}),
+    ("ME9", {"software_version"}),
+    ("ME7", {"software_version", "hardware_number", "calibration_id"}),
     ("ME1.5.5", {"software_version", "hardware_number"}),
-    ("M5.",     {"software_version", "hardware_number"}),
-    ("M4.",     {"software_version", "hardware_number", "calibration_id"}),
-    ("MP3.",    {"software_version", "hardware_number"}),
-    ("MP7.",    {"software_version", "hardware_number"}),
-    ("M3.",     {"software_version", "hardware_number", "calibration_id"}),
-    ("M2.",     {"software_version", "hardware_number"}),
-    ("M1.",     {"software_version", "hardware_number"}),
-    ("MP9",     {"software_version", "hardware_number"}),
-    ("LH-Jetronic",    {"calibration_id"}),
-    ("Mono-Motronic",  set()),
-    ("DME-3.2",        set()),
-    ("M1.x-early",     set()),
-    ("KE-Jetronic",    set()),
-    ("EZK",            set()),
+    ("M5.", {"software_version", "hardware_number"}),
+    ("M4.", {"software_version", "hardware_number", "calibration_id"}),
+    ("MP3.", {"software_version", "hardware_number"}),
+    ("MP7.", {"software_version", "hardware_number"}),
+    ("M3.", {"software_version", "hardware_number", "calibration_id"}),
+    ("M2.", {"software_version", "hardware_number"}),
+    ("M1.", {"software_version", "hardware_number"}),
+    ("MP9", {"software_version", "hardware_number"}),
+    ("LH-Jetronic", {"calibration_id"}),
+    ("Mono-Motronic", set()),
+    ("DME-3.2", set()),
+    ("M1.x-early", set()),
+    ("KE-Jetronic", set()),
+    ("EZK", set()),
     # ── Siemens ─────────────────────────────────────────────────────────────
-    ("SID801",   {"software_version", "hardware_number", "calibration_id"}),
-    ("SID803",   {"software_version", "calibration_id"}),
-    ("PPD",      {"software_version", "hardware_number"}),
-    ("SIMOS",    {"software_version", "hardware_number"}),
+    ("SID801", {"software_version", "hardware_number", "calibration_id"}),
+    ("SID803", {"software_version", "calibration_id"}),
+    ("PPD", {"software_version", "hardware_number"}),
+    ("SIMOS", {"software_version", "hardware_number"}),
     ("Simtec56", {"software_version", "hardware_number", "calibration_id"}),
-    ("EMS2000",  set()),
+    ("EMS2000", set()),
     # ── Delphi ──────────────────────────────────────────────────────────────
-    ("Multec S", {"software_version", "calibration_id", "oem_part_number", "ecu_variant"}),
-    ("Multec",   {"software_version", "calibration_id", "ecu_variant"}),
+    (
+        "Multec S",
+        {"software_version", "calibration_id", "oem_part_number", "ecu_variant"},
+    ),
+    ("Multec", {"software_version", "calibration_id", "ecu_variant"}),
     # ── Magneti Marelli ─────────────────────────────────────────────────────
-    ("MJD 6JF",  {"software_version", "hardware_number", "calibration_id", "ecu_variant"}),
-    ("IAW 1AV",  {"software_version", "oem_part_number"}),
-    ("IAW 4LV",  {"software_version", "hardware_number", "oem_part_number"}),
-    ("IAW 1AP",  {"calibration_id"}),
+    (
+        "MJD 6JF",
+        {"software_version", "hardware_number", "calibration_id", "ecu_variant"},
+    ),
+    ("IAW 1AV", {"software_version", "oem_part_number"}),
+    ("IAW 4LV", {"software_version", "hardware_number", "oem_part_number"}),
+    ("IAW 1AP", {"calibration_id"}),
 ]
 
 
@@ -166,9 +187,7 @@ def _get_family_profile(family: str) -> Optional[set[str]]:
 _CANONICAL_SW_PATTERNS: dict[str, re.Pattern[str]] = {
     # Bosch: 1037, 1039, 1267, 1277, 2227, 2537 followed by 6+ digits
     # (optionally ending with a version suffix like "V0").
-    "Bosch": re.compile(
-        r"^(?:1037|1039|1267|1277|2227|2537)\d{6}"
-    ),
+    "Bosch": re.compile(r"^(?:1037|1039|1267|1277|2227|2537)\d{6}"),
     # Delphi / Delco: 8-digit GM-style SW part number.
     "Delphi": re.compile(r"^\d{8}$"),
     # Siemens: 9-digit serial, or 5WK9-prefixed part number.
@@ -177,9 +196,7 @@ _CANONICAL_SW_PATTERNS: dict[str, re.Pattern[str]] = {
     #   MJD 6JF:  5-digit + letter + 3-digit  (e.g. "31315X375")
     #   IAW 1AV:  letter + 3-digit            (e.g. "F012")
     #   IAW 4LV:  4-digit                     (e.g. "3335")
-    "Magneti Marelli": re.compile(
-        r"^\d{4,5}[A-Z]\d{3}$|^\d{4}$|^[A-Z]\d{3}$"
-    ),
+    "Magneti Marelli": re.compile(r"^\d{4,5}[A-Z]\d{3}$|^\d{4}$|^[A-Z]\d{3}$"),
 }
 
 
@@ -200,10 +217,10 @@ def _is_canonical_sw(manufacturer: Optional[str], sw: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _DETECTION_BONUS: dict[Optional[str], int] = {
-    "strong":   15,
+    "strong": 15,
     "moderate": 10,
-    "weak":      5,
-    None:        0,   # backward compat: extractor didn't declare strength
+    "weak": 5,
+    None: 0,  # backward compat: extractor didn't declare strength
 }
 
 
@@ -235,17 +252,39 @@ def _detection_strength_bonus(detection_strength: Optional[str]) -> int:
 
 # Prefixes of families whose profile includes "software_version".
 _SW_EXPECTED_FAMILY_PREFIXES: tuple[str, ...] = (
-    "EDC17", "MEDC17", "MED17", "ME17", "MED9", "MD1",
-    "EDC16", "EDC15", "EDC3", "EDC1",
-    "ME9", "ME7", "ME1.5.5",
-    "M5.", "M4.", "M3.", "M2.", "M1.",
-    "MP3.", "MP7.", "MP9",
+    "EDC17",
+    "MEDC17",
+    "MED17",
+    "ME17",
+    "MED9",
+    "MD1",
+    "EDC16",
+    "EDC15",
+    "EDC3",
+    "EDC1",
+    "ME9",
+    "ME7",
+    "ME1.5.5",
+    "M5.",
+    "M4.",
+    "M3.",
+    "M2.",
+    "M1.",
+    "MP3.",
+    "MP7.",
+    "MP9",
     # Siemens
-    "SID801", "SID803", "PPD", "SIMOS", "Simtec56",
+    "SID801",
+    "SID803",
+    "PPD",
+    "SIMOS",
+    "Simtec56",
     # Delphi
-    "Multec",   # covers both "Multec" and "Multec S"
+    "Multec",  # covers both "Multec" and "Multec S"
     # Marelli (those that store SW)
-    "MJD 6JF", "IAW 1AV", "IAW 4LV",
+    "MJD 6JF",
+    "IAW 1AV",
+    "IAW 4LV",
 )
 
 
@@ -400,7 +439,7 @@ def _score_to_tier(score: int) -> str:
 
 def score_identity(identity: dict, filename: str = "unknown.bin") -> ConfidenceResult:
     """
-    Compute a confidence score for an ECU binary identity.
+    Compute an identification confidence score for an ECU binary.
 
     Args:
         identity: Dict produced by ``identify_ecu()`` or any compatible source.
@@ -412,8 +451,9 @@ def score_identity(identity: dict, filename: str = "unknown.bin") -> ConfidenceR
                   components are required).  Used for filename-based signals.
 
     Returns:
-        :class:`ConfidenceResult` with ``score``, ``tier``, ``signals``,
-        and ``warnings``.
+        :class:`ConfidenceResult` with ``score`` (identification confidence),
+        ``tier``, ``signals`` (individual contributing factors), and
+        ``warnings``.
     """
     signals: List[ConfidenceSignal] = []
     warnings: List[str] = []
@@ -458,9 +498,7 @@ def score_identity(identity: dict, filename: str = "unknown.bin") -> ConfidenceR
             signals.append(ConfidenceSignal(+30, "canonical SW version"))
         else:
             score += 15
-            signals.append(
-                ConfidenceSignal(+15, f"SW version present ({sw[:12]})")
-            )
+            signals.append(ConfidenceSignal(+15, f"SW version present ({sw[:12]})"))
     else:
         if sw_expected:
             # SW is expected but absent — how bad depends on match_key.
@@ -493,23 +531,17 @@ def score_identity(identity: dict, filename: str = "unknown.bin") -> ConfidenceR
     # ── ECU variant ──────────────────────────────────────────────────────────
     if variant and variant != family:
         score += 10
-        signals.append(
-            ConfidenceSignal(+10, f"ECU variant identified ({variant})")
-        )
+        signals.append(ConfidenceSignal(+10, f"ECU variant identified ({variant})"))
 
     # ── Calibration ID ───────────────────────────────────────────────────────
     if cal_id:
         score += 10
-        signals.append(
-            ConfidenceSignal(+10, f"calibration ID present ({cal_id[:12]})")
-        )
+        signals.append(ConfidenceSignal(+10, f"calibration ID present ({cal_id[:12]})"))
 
     # ── OEM part number ──────────────────────────────────────────────────────
     if oem_pn:
         score += 5
-        signals.append(
-            ConfidenceSignal(+5, f"OEM part number present ({oem_pn[:16]})")
-        )
+        signals.append(ConfidenceSignal(+5, f"OEM part number present ({oem_pn[:16]})"))
 
     # ── Filename signals ─────────────────────────────────────────────────────
     fname = Path(filename).name  # strip any leading path components defensively
